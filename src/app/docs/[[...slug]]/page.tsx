@@ -6,7 +6,7 @@ import {
 } from 'fumadocs-ui/page'
 import { notFound } from 'next/navigation'
 import { source } from '@/lib/source'
-import { useMDXComponents } from '@/mdx-components'
+import { useMDXComponents } from '../../../mdx-components'
 import { PageBreadcrumb, buildCrumbsFromSlug } from '@/components/docs/page-breadcrumb'
 import { FeedbackLink } from '@/components/docs/feedback-link'
 import type { Metadata } from 'next'
