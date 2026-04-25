@@ -1,0 +1,10 @@
+{
+  "title": "Setup",
+  "pages": [
+    "introduction",
+    "tooling",
+    "supabase",
+    "resend",
+    "project"
+  ]
+}

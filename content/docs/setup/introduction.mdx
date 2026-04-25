@@ -1,0 +1,88 @@
+---
+title: Introduction
+description: Overview of the setup process — from zero to a running app on localhost
+---
+
+Setup is divided into 4 sequential parts. Follow this order — later steps need the output of earlier ones.
+
+## Setup Sequence
+
+```
+┌─────────────────────────────┐
+│ 1. Tooling                  │  Once per machine
+│    Node 20, pnpm, Git       │
+└──────────────┬──────────────┘
+               ▼
+┌─────────────────────────────┐
+│ 2. Supabase                 │  Database + Auth + Storage
+│    Project + setup.sql      │  Send Email Hook after deploy
+│    Auth providers + URLs    │
+└──────────────┬──────────────┘
+               ▼
+┌─────────────────────────────┐
+│ 3. Resend                   │  Transactional email
+│    Domain verify + API key  │
+└──────────────┬──────────────┘
+               ▼
+┌─────────────────────────────┐
+│ 4. Project                  │  Clone, install, .env, run
+│    localhost:3000 running   │
+└─────────────────────────────┘
+```
+
+Target total time: **30-45 minutes** if everything goes smoothly.
+
+## Setup Page List
+
+| Page | Skip if... |
+|---|---|
+| [Tooling](/docs/setup/tooling) | Node 20+, pnpm, Git already installed |
+| [Supabase Setup](/docs/setup/supabase) | You already have a Supabase project with the schema ready |
+| [Resend Setup](/docs/setup/resend) | You've already verified a domain & have an API key |
+| [Project Setup](/docs/setup/project) | — required, can't be skipped |
+
+## What You Get After Setup
+
+✅ **Works immediately:**
+
+- Login page with your own brand name + logo
+- Email + password login
+- Magic link (email lands in the inbox, not spam)
+- Forgot password → reset password flow
+- Google OAuth (if enabled)
+- Public signup (if `allowPublicSignup: true`)
+- Admin panel (for users with role `admin` / `super_admin`)
+- Dashboard + sidebar + mobile bottom nav
+- 8 DB tables ready to use
+- `avatars` storage bucket ready for upload
+
+⏳ **Needs additional per-feature setup:**
+
+- Connect a Lemon Squeezy account → [Commerce Setup](/docs/commerce/setup)
+- Configure the LS webhook → [Commerce Webhooks](/docs/commerce/webhooks)
+- Customize email template content → [Email Templates](/docs/email/templates)
+
+## Send Email Hook — Needs a Public URL
+
+Send Email Hook (the feature that makes auth emails use your custom template via Resend) needs a **public URL** to the `/api/auth/hooks/send-email` endpoint. This is a unique local dev constraint.
+
+**Two options:**
+
+1. **Deploy to Vercel first** → get a production URL → set up the hook → come back to dev using that URL (risk: dev errors can hit production users)
+2. **Use ngrok** locally → tunnel localhost to a public URL → set up the hook to the ngrok URL
+
+Details in [Email Setup → Send Email Hook](/docs/email/setup). **You can skip hook setup initially** — auth emails fall back to Supabase default SMTP (strict limits, poor deliverability, but enough for early testing).
+
+## Prerequisite Knowledge
+
+This boilerplate doesn't teach Next.js or React from scratch. You should at least already understand:
+
+- Next.js App Router (layouts, route groups, Server Components vs Client Components)
+- Basic React hooks (`useState`, `useEffect`, custom hooks)
+- Basic TypeScript (generics, type vs interface)
+- Basic SQL (SELECT, INSERT, UPDATE)
+- Basic Git (clone, commit, push)
+
+If any of these aren't familiar, read the [Next.js docs](https://nextjs.org/docs) first — this boilerplate assumes you're ready to go.
+
+Continue to [Tooling](/docs/setup/tooling) if you haven't set up Node 20 + pnpm + Git.

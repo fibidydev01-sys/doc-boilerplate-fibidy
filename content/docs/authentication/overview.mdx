@@ -1,0 +1,228 @@
+---
+title: Overview
+description: Auth architecture, providers, login flow, redirect priority
+---
+
+Authentication is handled by **Supabase Auth**. The boilerplate wraps it in a config-driven, role-aware layer with redirect priority.
+
+## Supported Providers
+
+Configured in `src/config/app.config.ts`:
+
+```ts
+auth: {
+  passwordProviders: ["email", "magic-link"] as const,
+  oauthProviders: ["google"] as const,
+  // ...
+}
+```
+
+| Provider | Status | Documentation |
+|---|---|---|
+| Email + Password | ✅ Fully implemented | [Email & Password](/docs/authentication/email-password) |
+| Magic Link | ✅ Fully implemented | [Magic Link](/docs/authentication/magic-link) |
+| Google OAuth | ✅ Fully implemented | [Google OAuth](/docs/authentication/google-oauth) |
+| Other OAuth (GitHub, Apple, etc.) | ⏳ Extension point | [Adding OAuth Providers](/docs/authentication/adding-oauth-providers) |
+
+Toggling: edit the array in `app.config.ts`. The LoginForm and RegisterForm automatically render in the array's order.
+
+## Three Auth Route Endpoints
+
+The auth flow uses three route handlers in `src/app/api/auth/`:
+
+| Route | Purpose |
+|---|---|
+| `/api/auth/callback` | OAuth PKCE callback — exchange `code` → session |
+| `/api/auth/confirm` | Email OTP verification — for magic link, signup confirm, recovery, email change |
+| `/api/auth/hooks/send-email` | Supabase Send Email Hook receiver — renders the template and sends via Resend |
+
+Why split `callback` and `confirm`? Different Supabase APIs:
+
+- OAuth uses `exchangeCodeForSession(code)` with a `code` query param
+- Email OTP uses `verifyOtp(\{ token_hash, type \})` with `token_hash` + `type` query params
+
+They can't merge into a single handler.
+
+## Login Flow (High-Level)
+
+```
+1. User opens a protected URL → middleware checks the session
+2. No session → redirect to /login?returnTo=<original-path>
+3. User logs in via the form (email/pwd, OAuth, magic link)
+4. Supabase sets the session cookie → callback verifies the profile in the DB
+5. Redirect priority: returnTo → roleRedirects[role] → postLoginRedirect
+```
+
+### Middleware Auth Guard
+
+File: `src/proxy.ts`:
+
+- Checks the session on every request (via `supabase.auth.getUser()` inside `updateSession`)
+- Refreshes the JWT when it's close to expiring
+- Redirects unauthenticated users to `/login`, with a `returnTo` query param
+- Allow-list for public routes (login, register, auth API endpoints)
+
+> ⚠️ **Don't remove the `getUser()` call in the proxy.** Without it, the session stops auto-refreshing → users get logged out after JWT expiry (default 1 hour).
+
+## Redirect Priority
+
+The `resolvePostLoginRedirect()` helper in `src/config/app.config.ts` determines the destination:
+
+1. **`returnTo`** from the URL (if it's a valid internal path)
+2. **`roleRedirects[role]`** — per role (admin → `/admin`)
+3. **`postLoginRedirect`** — global fallback (`/dashboard`)
+
+`returnTo` is strictly validated via `isSafeInternalPath()`:
+
+- Must start with `/`
+- Not `//` (protocol-relative attack)
+- Not start with `\\` (backslash trick)
+- Not start with the `postLogoutRedirect` value (prevents redirect loops back to `/login`)
+- External URLs rejected (prevents open-redirect attacks)
+
+## Profile Verification
+
+After Supabase Auth succeeds, the boilerplate **always verifies the profile** in `public.user_profiles`:
+
+- **Profile exists** — the user must already have a row in `user_profiles`
+- **Profile active** — `is_active = true` (admins can deactivate without deleting)
+
+If either check fails, the user is `signOut()`ed and redirected to `/login?error=<reason>`. Error codes (as defined in both callback handlers):
+
+| Code | Meaning | Cause |
+|---|---|---|
+| `account_not_registered` | User exists in Supabase Auth but no profile row | Usually rare — the `handle_new_user()` trigger is broken, or the profile was deleted while the auth user was not |
+| `account_deactivated` | Profile exists, `is_active = false` | An admin deactivated the user |
+| `auth_callback_error` | OAuth/OTP exchange failed | Invalid code, expired token, or verification returned an error |
+
+Logic lives in `verifyProfile()` in `src/core/auth/services/profile.service.ts`.
+
+### Why `verifyProfile` and not `fetchActiveProfile`?
+
+Callback routes use `verifyProfile` (not `fetchActiveProfile`) specifically so they can distinguish "not registered" vs "deactivated":
+
+- `fetchActiveProfile` filters on `is_active = true` at the query level — a deactivated user returns `null`, indistinguishable from a missing row
+- `verifyProfile` queries without the filter and returns `\{ exists, isActive, role \}` — the caller can branch properly
+
+Pages and hooks that only need the active profile (e.g. `DashboardLayout`, `useAuthStore.fetchUser`) use `fetchActiveProfile` because the filtered query is fine for their case.
+
+## Recovery Flow Special-Casing
+
+Both `/api/auth/callback` and `/api/auth/confirm` detect the **password recovery flow** and treat it differently:
+
+- **`/api/auth/callback`** — if `next` starts with `/reset-password`, skip the login activity log and redirect straight to `next`. The session established here is a recovery session, not a "real" login.
+- **`/api/auth/confirm`** — if `type === "recovery"`, skip the profile check and activity log; redirect to `/reset-password` (or `next` if it already points there).
+
+This prevents phantom `user.login` entries in `activity_logs` every time someone resets their password.
+
+## Auth State (Client-Side)
+
+`useAuth()` facade — the main entry point for components:
+
+```tsx
+import { useAuth } from "@/core/auth/hooks";
+
+function Component() {
+  const {
+    user,              // UserProfile | null
+    isLoading,
+    isAuthenticated,
+    isAdmin,
+    hasFetched,
+    fetchUser,         // refresh the profile manually
+    can,               // (permission: string) => boolean
+    canAccessAdmin,
+    logout,
+  } = useAuth();
+
+  if (isLoading) return <Spinner />;
+  if (!isAuthenticated) return null;
+
+  return (
+    <>
+      <p>Hi, {user.full_name}</p>
+      {can("users:write") && <EditButton />}
+      <button onClick={logout}>Logout</button>
+    </>
+  );
+}
+```
+
+### Granular Subscription
+
+When a component only needs one field (performance), subscribe via selector:
+
+```tsx
+import { useAuthStore } from "@/core/auth/store";
+
+// Only re-renders when isLoading changes
+const isLoading = useAuthStore((state) => state.isLoading);
+```
+
+## Permission Checks
+
+Details in [Permissions](/docs/configuration/permissions).
+
+### Client
+
+```tsx
+import { usePermission } from "@/core/auth/hooks";
+
+const canEdit = usePermission("users:write");
+```
+
+### Server
+
+```ts
+import { can } from "@/core/auth/lib";
+
+if (!can(profile.role, "admin:access")) {
+  notFound();
+}
+```
+
+## Logout
+
+```tsx
+import { useAuth } from "@/core/auth/hooks";
+
+const { logout } = useAuth();
+await logout();  // auto-redirects to postLogoutRedirect
+```
+
+Or use the `<LogoutButton />` component (with a built-in confirm dialog):
+
+```tsx
+import { LogoutButton } from "@/core/auth";
+
+<LogoutButton />
+```
+
+Logout logs a `user.logout` activity **before** signing out (the session must still be valid for the RLS insert policy), then clears the store and calls `supabase.auth.signOut()`.
+
+## Activity Logging
+
+Every login, logout, signup, and password reset completion is automatically logged to the `activity_logs` table. Details in [Activity Logging](/docs/activity-logging).
+
+## Forms Already Shipped
+
+All auth pages are in `src/app/(auth)/`:
+
+- `/login` — LoginForm
+- `/register` — RegisterForm (when `allowPublicSignup: true`)
+- `/forgot-password` — ForgotPasswordForm
+- `/reset-password` — ResetPasswordForm
+
+Component sources are in `src/core/auth/components/`:
+
+- `login-form.tsx` — composer (renders the enabled providers)
+- `register-form.tsx` — composer for signup
+- `forgot-password-form.tsx`
+- `reset-password-form.tsx`
+- `logout-button.tsx`
+- `providers/` — per-provider sub-components:
+  - `email-password-form.tsx`
+  - `email-password-register-form.tsx`
+  - `magic-link-form.tsx`
+  - `oauth-button.tsx`
+  - `oauth-config.tsx` (icon + label registry)

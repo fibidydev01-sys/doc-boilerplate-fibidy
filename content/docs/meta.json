@@ -1,0 +1,29 @@
+{
+  "title": "Boilerplate",
+  "root": true,
+  "pages": [
+    "index",
+    "tech-stack",
+    "setup",
+    "---Architecture & Config---",
+    "architecture",
+    "configuration",
+    "environment-variables",
+    "working-with-the-codebase",
+    "---Features---",
+    "authentication",
+    "database",
+    "email",
+    "commerce",
+    "landing",
+    "internationalization",
+    "activity-logging",
+    "---Operations---",
+    "deployment",
+    "troubleshooting",
+    "---Extension Points (Not Included)---",
+    "push-notification",
+    "analytics",
+    "monitoring"
+  ]
+}

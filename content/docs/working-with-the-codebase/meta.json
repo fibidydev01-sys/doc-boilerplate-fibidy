@@ -1,0 +1,8 @@
+{
+  "title": "Working with the codebase",
+  "pages": [
+    "project-structure",
+    "update-the-codebase",
+    "manage-dependencies"
+  ]
+}

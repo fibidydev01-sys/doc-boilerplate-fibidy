@@ -1,0 +1,155 @@
+---
+title: Setup
+description: Connect a Lemon Squeezy account to the app
+---
+
+Commerce setup has two steps: (1) connect an API key, (2) configure a webhook. This page covers step 1. Webhook details in [Commerce Webhooks](/docs/commerce/webhooks).
+
+## Prerequisites
+
+- An active LS account at [lemonsqueezy.com](https://lemonsqueezy.com)
+- At least one Store in LS (create via LS Dashboard → Stores → New store)
+- At least one published Product
+- The boilerplate running with the `ENCRYPTION_KEY` env var set (otherwise encrypt will fail)
+
+## Step 1 — Generate an API Key in LS
+
+1. Log into [app.lemonsqueezy.com](https://app.lemonsqueezy.com)
+2. Top-right → profile icon → **Settings**
+3. Sidebar → **API**
+4. Click **Create API key**
+5. **Name**: anything (e.g. `my-app-production`)
+6. Submit → copy the API key
+
+⚠️ **The API key appears only once.** Save it temporarily (password manager) — the next step is pasting it into the app UI.
+
+## Step 2 — Connect in the App
+
+1. Log into the app as any user (buyer / merchant are the same here — every user can connect their own LS account)
+2. Navigate to `/settings/integrations`
+3. **Lemon Squeezy** section → click **Connect**
+4. Paste the API key → Submit
+
+Behind the scenes:
+
+- The API key is encrypted with `ENCRYPTION_KEY`
+- The encrypted value lands in `commerce_credentials.encrypted_api_key`
+- Status shows `Connected`
+- Activity log: `commerce.credential_connected`
+
+### Verify Connected
+
+After connecting, the UI should:
+
+- Show a `Connected` badge with the LS account email
+- Display the Store name + product count
+- Enable navigation to `/products`, `/orders`, `/subscriptions`, `/customers`
+
+If it fails (shows "Invalid API key"):
+
+- Check the API key wasn't truncated during copy
+- Check the LS API key is still active (not revoked)
+- Regenerate a new key if needed
+
+## Step 3 — Configure the Webhook
+
+Continue to [Commerce Webhooks](/docs/commerce/webhooks) to:
+
+- Generate a webhook token (per user)
+- Register the webhook URL in the LS Dashboard
+- Set the webhook secret
+- Test webhook delivery
+
+**The webhook is required** so order + subscription data auto-syncs to the DB. Without a webhook, users check out in LS but the order data never reaches your app.
+
+## Disconnect
+
+Settings → Integrations → Lemon Squeezy → **Disconnect**.
+
+Effects:
+
+- The row in `commerce_credentials` is deleted
+- Orders + subscriptions remain (historical), but new data can't be fetched from LS
+- The webhook config remains (can be disconnected separately)
+
+**Reconnecting** (pasting a new API key) will overwrite the encrypted value in the DB — no need to manually delete first.
+
+## Multi-Tenant Model
+
+Every user has their own `commerce_credentials` row. This means:
+
+- User A connects LS account X → API calls use key X
+- User B connects LS account Y → API calls use key Y
+- User C hasn't connected → the commerce section is disabled for them
+
+RLS policy:
+
+```sql
+CREATE POLICY "credentials_self_access"
+  ON commerce_credentials FOR ALL
+  USING (auth.uid() = owner_user_id);
+```
+
+Users can only read/write their own credentials. The admin role bypasses via an additional `is_admin()` policy (optional — enable if you need admins to intervene).
+
+## LS API Key — Scope & Rotation
+
+### Scope
+
+The API key has full access to the LS account — create products, list orders, refund, etc. There's no granular scope (e.g. "read-only orders"). Treat the API key like the LS account password.
+
+### Rotation
+
+If the API key leaks:
+
+1. LS Dashboard → Settings → API → click the key → **Revoke**
+2. Generate a new one
+3. In the app, the user reconnects at `/settings/integrations` with the new key
+
+Old + new can overlap during transition (both active). Once you've confirmed the new one works, revoke the old.
+
+### Shared vs Individual Keys
+
+If you're a team and want to share one LS account across several users in the app:
+
+- Option 1 — Each user has their own API key (LS supports multiple keys per account)
+- Option 2 — Share one key, paste it into every user's credentials row (not recommended — a leak at one user = a leak for all)
+
+Recommended: Option 1. The LS dashboard supports creating multiple named keys per account.
+
+## LS API Rate Limit
+
+LS API rate limit:
+
+- **300 requests per 60 seconds** per API key
+- Plenty for dev + small team use
+
+The boilerplate doesn't implement client-side rate limiting. If you hit the limit, LS returns 429 — the handler surfaces the error to the UI. For production scale, consider:
+
+- Caching product listings (rarely changing) in Redis / memory
+- Batching operations when syncing a lot of data
+
+## Troubleshoot
+
+### "Invalid API key" after Submit
+
+- Check the API key wasn't partially copied (horizontal scroll in the LS UI)
+- Check the API key hasn't been revoked in the LS Dashboard
+- Generate a new key, try again
+
+### "Connection failed" with `ENCRYPTION_KEY env var not set`
+
+- The `ENCRYPTION_KEY` env is empty in the server environment
+- Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+- Set in `.env.local` (dev) or Vercel (production)
+- Restart the dev server / redeploy
+
+### Connect succeeds, but `/products` page errors 500
+
+- The user doesn't have a Store in LS — create a Store with at least one published Product
+- The API key is from a different account than the Store — verify the key comes from the right account
+- Check Vercel Logs / the terminal for error detail
+
+### Connect succeeds but orders don't appear in the DB
+
+The webhook isn't set up. Continue to [Commerce Webhooks](/docs/commerce/webhooks).

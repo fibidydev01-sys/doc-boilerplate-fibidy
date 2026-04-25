@@ -1,0 +1,13 @@
+{
+  "title": "Commerce",
+  "pages": [
+    "overview",
+    "setup",
+    "webhooks",
+    "products",
+    "orders",
+    "subscriptions",
+    "customers",
+    "checkout"
+  ]
+}

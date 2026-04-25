@@ -1,0 +1,286 @@
+---
+title: Deploy to Vercel
+description: Deploy the boilerplate to production using Vercel
+---
+
+Vercel = the default deployment target. Zero-config for Next.js.
+
+## Prerequisites
+
+- [Supabase](/docs/setup/supabase) + [Resend](/docs/setup/resend) set up — env vars ready
+- Code on GitHub (public or private repo)
+- Active Vercel account ([vercel.com](https://vercel.com), free tier is enough)
+
+## Step 1 — Import Project
+
+1. Vercel Dashboard → **Add New** → **Project**
+2. **Import Git Repository** → pick the boilerplate repo
+3. Click **Import**
+
+### Framework Detection
+
+Vercel auto-detects Next.js 16 + pnpm. Default settings are correct:
+
+- **Framework**: Next.js
+- **Root Directory**: `/` (default)
+- **Build Command**: `pnpm build` (auto)
+- **Install Command**: `pnpm install` (auto)
+- **Output Directory**: `.next` (default)
+
+Skip override unless you have a specific need.
+
+## Step 2 — Environment Variables
+
+Before **Deploy**, expand the **Environment Variables** section.
+
+Add every required env var:
+
+```
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+ENCRYPTION_KEY
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+SEND_EMAIL_HOOK_SECRET
+NEXT_PUBLIC_APP_URL                 ← PRODUCTION URL
+NEXT_PUBLIC_APP_NAME                 ← Your brand
+NEXT_PUBLIC_APP_SHORT_NAME
+NEXT_PUBLIC_APP_DESCRIPTION
+NEXT_PUBLIC_APP_PRIMARY_COLOR
+# ... etc.
+```
+
+Details on each env var in [Environment Variables](/docs/environment-variables).
+
+### Scope per Environment
+
+Every env var can be scoped to:
+
+- **Production** — `main` branch build
+- **Preview** — branch / PR deployments
+- **Development** — `vercel dev` local (rarely used; you use `pnpm dev` locally)
+
+**Best practice:**
+
+- `NEXT_PUBLIC_SUPABASE_*`, `RESEND_*`, `ENCRYPTION_KEY` — all scopes (Production + Preview)
+- `SEND_EMAIL_HOOK_SECRET` — **only Production** (hook URL differs per deployment)
+- `NEXT_PUBLIC_APP_URL` — per scope: production URL for Production, dynamic preview URL for Preview
+
+If you use the same Supabase project for Production + Preview, sensitive data will be mixed. **Recommended:** create a separate Supabase project for Preview (free tier supports this).
+
+### Bulk Import from .env
+
+Vercel supports pasting `.env` format directly:
+
+- Click **Add multiple** in the Environment Variables section
+- Paste the contents of your `.env.local` (minus comments)
+- Vercel auto-parses each line as key=value
+
+Fast for initial setup. Still check scope per variable after paste.
+
+## Step 3 — Deploy
+
+Click **Deploy**. Build runs ~2-4 minutes.
+
+On success:
+
+- Vercel assigns a default URL: `<project-name>.vercel.app`
+- A custom domain can be attached later (Step 5)
+
+## Step 4 — Post-Deploy Supabase Update
+
+With a new production URL → update Supabase:
+
+### A. Redirect URLs
+
+Supabase Dashboard → **Authentication** → **URL Configuration** → **Redirect URLs**:
+
+Add:
+
+```
+https://<your-project>.vercel.app/api/auth/callback
+https://<your-project>.vercel.app/api/auth/confirm
+https://<your-project>.vercel.app/**
+```
+
+Pattern `*-yourvercelusername.vercel.app/**` for Preview deployments (optional).
+
+### B. Site URL
+
+**Site URL**: change from `http://localhost:3000` to the production URL.
+
+### C. Send Email Hook
+
+**Authentication** → **Hooks** → **Send Email Hook**:
+
+- **Hook URL**: update to production URL
+  ```
+  https://<your-project>.vercel.app/api/auth/hooks/send-email
+  ```
+- Secret stays — **don't regenerate** unless you really want to rotate
+
+### D. OAuth Providers
+
+If using Google OAuth:
+
+Google Cloud Console → APIs & Services → Credentials → OAuth client:
+
+- **Authorized JavaScript origins**: add `https://<your-project>.vercel.app`
+- **Authorized redirect URIs**: stays the Supabase URL (unchanged)
+
+## Step 5 — Custom Domain (Optional)
+
+Vercel Dashboard → project → **Settings** → **Domains**:
+
+1. Add domain: `yourdomain.com` or `app.yourdomain.com`
+2. Vercel gives you a DNS record (CNAME or A)
+3. Add the record at your DNS provider (Cloudflare, Namecheap, etc.)
+4. Wait for propagation (usually < 1 hour)
+5. Vercel auto-issues an SSL certificate (Let's Encrypt)
+
+Once the domain is active, update env + Supabase:
+
+- **Vercel env**: update `NEXT_PUBLIC_APP_URL` to `https://yourdomain.com`
+- **Supabase**: update Site URL + Redirect URLs to use the new domain
+- **Resend**: make sure `yourdomain.com` (or the email subdomain) is verified
+
+## Step 6 — Test Production
+
+Smoke test:
+
+- [ ] Open the production URL → login page appears
+- [ ] Sign up a new user → redirect to dashboard
+- [ ] Logout → redirect to login
+- [ ] Log back in (existing admin from dev) → redirect to `/admin`
+- [ ] Forgot password → email arrives, reset works
+- [ ] Magic link → email arrives, click works
+- [ ] Google OAuth (if enabled) → flow completes
+- [ ] `/products` page loads (if commerce enabled)
+- [ ] Webhook test from LS Dashboard (if commerce enabled)
+
+## Preview Deployments
+
+Every PR or branch push, Vercel auto-creates a preview deployment:
+
+- Unique URL per PR: `<project>-git-<branch>-<username>.vercel.app`
+- Preview-scoped env vars apply
+- Great for review + testing before merge
+
+### Preview with Separate Supabase
+
+If using a separate Supabase project for Preview:
+
+1. Create a Supabase project `<your-app>-staging`
+2. Run `setup.sql` on staging
+3. Vercel Env Variables → scope **Preview**:
+   - `NEXT_PUBLIC_SUPABASE_URL` → staging URL
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` → staging key
+   - etc.
+
+Preview deployments automatically use the staging DB. Production keeps using prod DB.
+
+## Rollback
+
+If a new deploy has issues:
+
+Vercel Dashboard → **Deployments** → pick a previous stable deployment → **Promote to Production**. Instant rollback (seconds, not minutes).
+
+The database stays in the same state — if the issue is a migration, an app rollback won't fix it. Roll-forward (add a new migration that undoes) is safer.
+
+## Cron / Scheduled Jobs
+
+Vercel Cron (free tier 2 cron max, paid unlimited):
+
+1. Create a route handler: `/api/cron/daily-cleanup`
+2. `vercel.json`:
+   ```json
+   {
+     "crons": [
+       {
+         "path": "/api/cron/daily-cleanup",
+         "schedule": "0 0 * * *"
+       }
+     ]
+   }
+   ```
+3. Secure: check a `CRON_SECRET` env var in the handler (Vercel sends a header)
+
+Use cases: clean old activity_logs, refresh Supabase types, recompute customer aggregates.
+
+## Analytics & Monitoring
+
+### Vercel Analytics (Built-in)
+
+Vercel Dashboard → project → **Analytics** — page views, performance metrics, Web Vitals. Free tier has limited data retention.
+
+Enable in the app:
+
+```tsx
+// src/app/layout.tsx
+import { Analytics } from "@vercel/analytics/react";
+
+<body>
+  {children}
+  <Analytics />
+</body>
+```
+
+### Logs
+
+Vercel Dashboard → project → **Logs** — real-time function invocation logs.
+
+Filter by:
+
+- Route (e.g. `/api/commerce/webhooks/*`)
+- Status code
+- Timestamp
+
+Retention: 24 hours (free) / unlimited (Pro).
+
+### External Monitoring
+
+Integrate Sentry / Datadog / LogTail for structured logging + error tracking. Manual setup — not included in the boilerplate. Details in [Monitoring](/docs/monitoring) (extension point).
+
+## Common Post-Deploy Issues
+
+### "Module not found" Error at Build
+
+Package in `devDependencies` but needed at runtime:
+
+```json
+// Move to dependencies
+{
+  "dependencies": {
+    "@radix-ui/react-dialog": "..."
+  }
+}
+```
+
+### Env Var Undefined at Runtime
+
+- Wrong scope (Development vs Production)
+- A new variable was added, haven't redeployed
+
+Fix: redeploy (push a new commit or manually redeploy from the dashboard).
+
+### Sessions Keep Logging Out
+
+- `NEXT_PUBLIC_APP_URL` empty / wrong
+- Cookie domain mismatch
+- Middleware `src/proxy.ts` isn't running (check the build output for the `ƒ` symbol = function)
+
+### API Route Timeout
+
+Vercel free tier: 10 seconds max per function invocation. Slow in:
+
+- Unoptimized LS API calls (3rd-party latency)
+- Database queries without indexes
+- Heavy computation
+
+Fix:
+
+- Add database indexes
+- Optimize the query
+- Upgrade to Vercel Pro (60 seconds) if needed
+- Split into a background task (Cron Job + queue)

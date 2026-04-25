@@ -1,0 +1,284 @@
+---
+title: Legal Pages
+description: 5 legal templates that describe the actual data flows in the codebase
+---
+
+The landing module ships **5 legal page templates** at `/legal/*`. Each one describes data flows that genuinely exist in this boilerplate (Supabase, Lemon Squeezy, Resend, AES-256-GCM encrypted credentials, signed webhooks). They're a starting point for your own publication.
+
+> ⚠️ **Templates, not legal advice.** Every jurisdiction has different requirements. Have a qualified lawyer review and adjust before publishing in production. Don't assume "boilerplate language" is safe — wrong terms can be worse than missing terms.
+
+## 5 Pages Shipped
+
+| Slug | Title | What it covers |
+|---|---|---|
+| `privacy-policy` | Privacy Policy | What data is collected, third-party processors, encryption at rest, user rights |
+| `terms` | Terms of Service | Account creation, acceptable use, subscriptions, refunds, disclaimers, governing law |
+| `license` | End-User License | Access grant, restrictions, ownership of the running service |
+| `disclaimer` | Disclaimer | No-warranty, third-party limits, no professional advice |
+| `acceptable-use` | Acceptable Use Policy | What's allowed, prohibited activity, security disclosure, abuse reporting |
+
+All five are linked from the footer + the legal sidebar. The sidebar auto-renders from `legalPageOrder` in `content/legal/index.ts`.
+
+## What Each Template Describes
+
+### Privacy Policy
+
+Maps directly to the data flows in the codebase:
+
+- **Account data** — email + chosen display name, plus OAuth profile data when signing in with Google
+- **Activity logs** — append-only audit trail (login, logout, signup, profile changes, integration changes); the actual `activity_logs` table that ships with the boilerplate
+- **Encrypted credentials** — Lemon Squeezy API keys + webhook secrets encrypted with AES-256-GCM before storage; key kept server-side
+- **Cookies** — Supabase auth session cookie (strictly necessary), locale preference cookie. **No advertising cookies, no third-party trackers.**
+- **Third-party processors** — Supabase (database/auth/storage), Lemon Squeezy (commerce), Resend (transactional email)
+- **User rights** — access, correction, deletion, objection, portability — phrased generically so the same template works for GDPR, CCPA, UU PDP
+
+If your fork adds new data collection (analytics, file uploads, search history, push subscriptions), update this template accordingly.
+
+### Terms of Service
+
+Standard SaaS terms, adapted to what the boilerplate actually does:
+
+- **Account creation** — references email/password, Google OAuth, magic link as actual options
+- **Acceptable use** — references the Acceptable Use Policy (separate page) for the full list
+- **Subscriptions and billing** — explicitly mentions Lemon Squeezy as the payment processor; clarifies that **Lemon Squeezy is the merchant of record** (LS handles tax compliance, not you)
+- **Refunds** — refers to point-of-purchase terms; you fill in your actual refund policy
+- **Disclaimers + limitation of liability** — capped at the greater of (a) 12 months of fees paid, or (b) USD 100. Adjust the number for your business model.
+- **Governing law** — uses `NEXT_PUBLIC_APP_LEGAL_JURISDICTION` env var. Set it to your real jurisdiction (e.g. `"Delaware, United States"`, `"Singapore"`, `"England and Wales"`, `"Indonesia"`).
+
+### End-User License
+
+The license that governs **end-user access to your deployed product**. This is **NOT** the license under which the underlying boilerplate source code was distributed to you — that's a separate concern between you and whoever sold you the boilerplate.
+
+What it does:
+
+- Grants the user a limited, non-exclusive, non-transferable right to access the service
+- Prohibits resale, sublicense, reverse-engineering, scraping for ML training, account sharing
+- Defers payment + ownership to the Terms of Service
+
+Important: edit this **before** publishing. The default copy is conservative; loosen restrictions if your product is open-source, freely sharable, or licensed differently.
+
+### Disclaimer
+
+Catches the category of legal protections that don't fit cleanly into ToS:
+
+- No warranty (as-is, as-available)
+- Not professional advice (legal, financial, tax, medical)
+- Third-party service limits (Supabase / Lemon Squeezy / Resend outages aren't your fault)
+- External links (you're not responsible for what other sites do)
+- User-generated content disclaimer
+- No guarantee of results
+
+Most SaaS apps need this even when the Terms of Service exists separately. Some jurisdictions require an explicit disclaimer.
+
+### Acceptable Use Policy
+
+Concrete list of what users can and can't do:
+
+- **Allowed** — one account per person/org, lawful purposes, connecting integrations, submitting content you have rights to
+- **Prohibited (general)** — fraud, malware, spam, harassment, IP infringement, privacy violations
+- **Prohibited (technical)** — reverse-engineering, vulnerability probing without permission, circumventing rate limits, **forging or replaying webhook signatures**, scraping, ML training on the service
+- **Account integrity** — keep credentials confidential, no sharing across users when the plan doesn't allow
+- **Connected payment integrations** — comply with the connected provider's (Lemon Squeezy's) acceptable use too
+- **Reporting + security disclosure** — channels for reporting abuse and disclosing vulnerabilities responsibly
+
+The "technical abuse" section is more specific than most templates because the codebase has clear technical surfaces (HMAC-verified webhooks, encrypted credentials, rate-limited endpoints). Tweak based on what your fork actually exposes.
+
+## Architecture
+
+### Content Files
+
+Each legal page is a typed object in `content/legal/<slug>.ts`:
+
+```ts
+// content/legal/privacy-policy.ts
+export const privacyPolicyContent: LegalPage = {
+  slug: "privacy-policy",
+  title: "Privacy Policy",
+  lastUpdated: new Date().toISOString().slice(0, 10),
+  intro: ["Paragraph 1", "Paragraph 2"],
+  sections: [
+    {
+      heading: "What we collect",
+      paragraphs: ["..."],
+      list: { type: "bulleted", items: ["..."] },
+      subsections: [/* nested */],
+    },
+    // ...
+  ],
+  contact: {
+    name: "{appName} Privacy",
+    email: brandingConfig.supportEmail,
+  },
+};
+```
+
+The `LegalPage` type supports paragraphs, bulleted/numbered lists, and recursive subsections — enough to express most legal documents without HTML.
+
+### Renderer
+
+A single component (`<LegalContent>`) renders any `LegalPage` object:
+
+```tsx
+// src/app/(marketing)/legal/privacy-policy/page.tsx
+import { LegalContent, interpolateBrand, privacyPolicyContent } from "@/modules/landing";
+import { brandingConfig } from "@/config";
+
+export default function PrivacyPolicyPage() {
+  const page = interpolateBrand(privacyPolicyContent, brandingConfig.name);
+  return <LegalContent page={page} />;
+}
+```
+
+`{appName}` is interpolated. The renderer handles paragraphs, lists, subsections, and the contact footer automatically.
+
+### Sidebar
+
+`<LegalSidebar />` reads from a registry to render nav links:
+
+```ts
+// content/legal/index.ts
+export const legalPages = {
+  "privacy-policy": privacyPolicyContent,
+  terms: termsContent,
+  license: licenseContent,
+  disclaimer: disclaimerContent,
+  "acceptable-use": acceptableUseContent,
+};
+
+export const legalPageOrder: Array<keyof typeof legalPages> = [
+  "privacy-policy",
+  "terms",
+  "license",
+  "disclaimer",
+  "acceptable-use",
+];
+```
+
+Add to `legalPageOrder` to control nav order. Drop a slug from the array to hide a page from the sidebar (the route still resolves if visited directly).
+
+## Last-Updated Date
+
+Each template uses `new Date().toISOString().slice(0, 10)` — the date is set at **build time**, not authoring time. Every production deploy refreshes the "Last updated" date.
+
+This is convenient (no manual date bumping) but slightly inaccurate — the date moves even if no legal text changed. Two ways to make it precise:
+
+1. **Hardcode the date** in each content file. Bump manually when you actually edit:
+   ```ts
+   lastUpdated: "2026-04-25",
+   ```
+
+2. **Track per-section history** in a separate audit log if your jurisdiction requires it (rare for general SaaS).
+
+For most products, the build-time approach is fine.
+
+## Adding a New Legal Page
+
+Three steps:
+
+### 1. Create the content file
+
+```ts
+// content/legal/cookie-policy.ts
+import { brandingConfig } from "@/config";
+import type { LegalPage } from "../../types";
+
+export const cookiePolicyContent: LegalPage = {
+  slug: "cookie-policy",
+  title: "Cookie Policy",
+  lastUpdated: new Date().toISOString().slice(0, 10),
+  intro: ["..."],
+  sections: [
+    {
+      heading: "What cookies we use",
+      paragraphs: ["..."],
+    },
+    // ...
+  ],
+  contact: {
+    name: "{appName} Privacy",
+    email: brandingConfig.supportEmail,
+  },
+};
+```
+
+### 2. Register in the index
+
+```ts
+// content/legal/index.ts
+import { cookiePolicyContent } from "./cookie-policy";
+
+export { cookiePolicyContent };
+
+export const legalPages = {
+  "privacy-policy": privacyPolicyContent,
+  terms: termsContent,
+  license: licenseContent,
+  disclaimer: disclaimerContent,
+  "acceptable-use": acceptableUseContent,
+  "cookie-policy": cookiePolicyContent,                    // ← add
+};
+
+export const legalPageOrder = [
+  "privacy-policy",
+  "cookie-policy",                                         // ← add in desired position
+  "terms",
+  "license",
+  "disclaimer",
+  "acceptable-use",
+] as const;
+```
+
+### 3. Create the route file
+
+```tsx
+// src/app/(marketing)/legal/cookie-policy/page.tsx
+import type { Metadata } from "next";
+import { brandingConfig } from "@/config";
+import {
+  LegalContent,
+  cookiePolicyContent,
+  interpolateBrand,
+} from "@/modules/landing";
+
+export const metadata: Metadata = {
+  title: cookiePolicyContent.title,
+};
+
+export default function CookiePolicyPage() {
+  const page = interpolateBrand(cookiePolicyContent, brandingConfig.name);
+  return <LegalContent page={page} />;
+}
+```
+
+The sidebar picks up the new page automatically. Update the footer columns in `content/layout.ts` if you want it in the footer.
+
+## Removing a Legal Page
+
+If you don't need one of the defaults (e.g. your product doesn't have an Acceptable Use policy because it's a single-tenant tool):
+
+1. Remove from `legalPageOrder` and the `legalPages` map in `content/legal/index.ts`
+2. Remove the export in the same file
+3. Delete the route file `src/app/(marketing)/legal/<slug>/page.tsx`
+4. Optionally delete the content file `content/legal/<slug>.ts`
+5. Remove the link from `content/layout.ts` footer columns
+
+The route returns 404 if you skip step 3 but keep step 1.
+
+## Pre-Publish Checklist
+
+Before going live with these pages:
+
+- [ ] **Lawyer review** — at minimum the Privacy Policy and Terms (the other three are usually less risky but still worth reviewing)
+- [ ] `NEXT_PUBLIC_APP_LEGAL_JURISDICTION` set to your real jurisdiction (used in Terms governing law clause)
+- [ ] `NEXT_PUBLIC_APP_SUPPORT_EMAIL` is monitored — these pages publish your contact address
+- [ ] If your product collects data not described in the default Privacy Policy (analytics, push subscriptions, file uploads, location), update the template
+- [ ] If your product has compliance requirements (HIPAA, PCI-DSS, GDPR Article 30 records), the templates are NOT sufficient — work with a specialist
+- [ ] If you're shipping a different license (open-source, freemium with paid tier), rewrite the End-User License from scratch
+- [ ] Refund policy in Terms matches what you actually do (the default refers to "point-of-purchase terms" without specifics)
+
+## Related Docs
+
+- [Overview](/docs/landing/overview) — module structure
+- [Customization](/docs/landing/customization) — replacing default copy across the marketing surface
+- [Database → Activity Logs](/docs/database/overview#activity_logs) — the audit trail referenced in the Privacy Policy
+- [Commerce → Webhooks](/docs/commerce/webhooks) — the HMAC-verified webhook flow referenced in the Privacy Policy and Acceptable Use

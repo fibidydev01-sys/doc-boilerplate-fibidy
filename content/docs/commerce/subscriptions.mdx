@@ -1,0 +1,357 @@
+---
+title: Subscriptions
+description: Recurring billing with lifecycle actions (pause, resume, cancel)
+---
+
+## Data Source
+
+Subscriptions **ARE** stored in the DB (mirrored from LS via webhook). Same as orders.
+
+## Table Schema
+
+```sql
+CREATE TABLE commerce_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'lemonsqueezy',
+  provider_subscription_id text NOT NULL,
+  order_id text,
+  order_item_id text,
+  product_id text,
+  variant_id text,
+  product_name text,
+  variant_name text,
+  customer_email text,
+  customer_name text,
+  customer_id text,
+  store_id text,
+  status text NOT NULL,
+  -- on_trial | active | paused | past_due | unpaid | cancelled | expired
+  status_formatted text,
+  pause_mode text,             -- void | free (null if not paused)
+  pause_resumes_at timestamptz,
+  card_brand text,
+  card_last_four text,
+  trial_ends_at timestamptz,
+  billing_anchor int,
+  renews_at timestamptz,
+  ends_at timestamptz,
+  subscription_created_at timestamptz,
+  metadata jsonb NOT NULL DEFAULT '{}',
+  raw_payload jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (provider, provider_subscription_id)
+);
+```
+
+### Status Lifecycle
+
+```
+          ┌─────────┐
+          │on_trial │ (if trial enabled)
+          └────┬────┘
+               ▼
+          ┌─────────┐      ┌──────────┐
+          │ active  │◄────►│  paused  │
+          └────┬────┘      └──────────┘
+               │
+       ┌───────┴───────┐
+       ▼               ▼
+  ┌──────────┐   ┌──────────┐
+  │cancelled │   │ past_due │
+  └──────────┘   └─────┬────┘
+                       ▼
+                  ┌─────────┐
+                  │ unpaid  │
+                  └─────┬───┘
+                        ▼
+                  ┌──────────┐
+                  │ expired  │
+                  └──────────┘
+```
+
+## Endpoints
+
+### List — `GET /api/commerce/subscriptions`
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `50` | Max rows returned |
+| `offset` | number | `0` | Pagination offset |
+| `status` | string | — | Filter by status (`active`, `paused`, etc.) |
+| `email` | string | — | Filter by customer email (ILIKE) |
+
+Auth: session required. RLS filters `owner_user_id = auth.uid()`.
+
+**Response:**
+
+```json
+{
+  "subscriptions": [
+    {
+      "id": "uuid",
+      "providerSubscriptionId": "sub_xxx",
+      "customerEmail": "buyer@example.com",
+      "productName": "Pro Plan",
+      "variantName": "Monthly",
+      "status": "active",
+      "statusLabel": "Active",
+      "renewsAt": "2026-05-23T10:00:00Z",
+      "endsAt": null
+    }
+  ],
+  "count": 15
+}
+```
+
+### Detail — `GET /api/commerce/subscriptions/[id]`
+
+Fetch a single subscription by LS `provider_subscription_id`.
+
+Returns 404 if not found or not owned by the current user.
+
+### Update Status — `PATCH /api/commerce/subscriptions/[id]`
+
+Pause, resume, or cancel a subscription.
+
+**Body:**
+
+```json
+{
+  "action": "pause" | "resume" | "cancel",
+  "pauseMode": "void" | "free",        // only for pause action
+  "resumesAt": "2026-06-01T00:00:00Z"  // optional, ISO string or null
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "subscription": { /* updated subscription */ }
+}
+```
+
+Handler flow:
+
+1. Verify the user owns the subscription (manual RLS check in the handler)
+2. Call LS API:
+   - Pause: `PATCH /subscriptions/\{id\}` with `\{data:\{attributes:\{pause:\{mode:"void"\}\}\}\}`
+   - Resume: `PATCH /subscriptions/\{id\}` with `\{data:\{attributes:\{pause:null\}\}\}`
+   - Cancel: `DELETE /subscriptions/\{id\}`
+3. LS sends `subscription_paused` / `subscription_resumed` / `subscription_cancelled` webhooks
+4. The handler updates status in the DB (both via direct upsert + webhook, for instant UX)
+
+### Backfill — `POST /api/commerce/subscriptions?pages=N`
+
+Manually sync subscriptions from LS API into the local DB.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `pages` | number | `1` | Pages to fetch from LS (100 subscriptions/page). Max 10. |
+
+**Response:**
+
+```json
+{ "synced": 42 }
+```
+
+## UI Page
+
+Page: `/subscriptions`.
+
+Shows:
+
+- Subscriptions table
+- Filter by status
+- Action buttons: **Pause**, **Resume**, **Cancel** (per row)
+
+Confirm dialog before executing an action (especially cancel — irreversible).
+
+## Webhook Event Handling
+
+| LS Event | App Action |
+|---|---|
+| `subscription_created` | Insert row, status `active` (or `on_trial` if there's a trial) |
+| `subscription_updated` | Update field (plan change, etc.) |
+| `subscription_cancelled` | Set status `cancelled`, set `ends_at` |
+| `subscription_resumed` | Set status `active` |
+| `subscription_expired` | Set status `expired` |
+| `subscription_paused` | Set status `paused` |
+| `subscription_unpaused` | Set status `active` |
+| `subscription_payment_success` | (Optional) update `renews_at` to the next cycle |
+| `subscription_payment_failed` | Set status `past_due`, optionally trigger notification |
+
+## Pause vs Cancel Semantics
+
+### Pause
+
+- Recurring billing skipped
+- User keeps access to features (optional — depends on app logic)
+- Can be resumed anytime
+- LS pause modes:
+  - `void` — billing skipped, user not charged (most common)
+  - `free` — billing skipped but user stays active (for LS internal metrics)
+
+### Cancel
+
+- Subscription runs until `ends_at` (typically end of current billing period)
+- After `ends_at` → status `expired`
+- Can't be resumed (need to subscribe again = new subscription)
+
+**User-facing messaging:**
+
+- Pause → "Your subscription is paused. Resume anytime."
+- Cancel → "Your subscription will end on \{ends_at\}. You can still use the service until then."
+
+## Query Patterns
+
+### Active Subscribers Count
+
+```ts
+const { count } = await supabase
+  .from("commerce_subscriptions")
+  .select("*", { count: "exact", head: true })
+  .eq("status", "active");
+```
+
+### MRR (Monthly Recurring Revenue) — Estimate
+
+The `commerce_subscriptions` table doesn't store amount directly — revenue information lives on `commerce_orders`. To compute MRR, join against the originating order:
+
+```sql
+-- Estimate MRR by joining subscriptions to their originating order
+-- Note: LS sends `mrr` directly on customer records; prefer that when available.
+SELECT
+  SUM(
+    CASE s.variant_name
+      WHEN 'Monthly' THEN o.total
+      WHEN 'Yearly' THEN o.total / 12
+      ELSE 0
+    END
+  ) AS mrr_minor_units  -- cents for USD
+FROM commerce_subscriptions s
+LEFT JOIN commerce_orders o ON o.provider_order_id = s.order_id
+WHERE s.status = 'active';
+```
+
+Not perfect — depends on your variant naming convention. The simplest production approach: read `mrr` directly from `commerce_customers` (LS computes it for you).
+
+### Churn (Cancelled This Month)
+
+```ts
+const { data } = await supabase
+  .from("commerce_subscriptions")
+  .select("count", { count: "exact" })
+  .eq("status", "cancelled")
+  .gte("updated_at", startOfMonth());
+```
+
+### Upcoming Renewals
+
+```ts
+const nextWeek = new Date();
+nextWeek.setDate(nextWeek.getDate() + 7);
+
+const { data } = await supabase
+  .from("commerce_subscriptions")
+  .select("*")
+  .eq("status", "active")
+  .lte("renews_at", nextWeek.toISOString());
+```
+
+## Feature Gating Pattern
+
+If your app gates features by subscription status:
+
+### Server-Side
+
+```ts
+async function hasActiveSubscription(userId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("commerce_subscriptions")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .in("status", ["active", "on_trial"])
+    .limit(1);
+  return (data?.length ?? 0) > 0;
+}
+
+// Guard page
+if (!(await hasActiveSubscription(user.id))) {
+  return redirect("/pricing");
+}
+```
+
+### Client Hook
+
+```tsx
+export function useSubscriptionStatus() {
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/commerce/subscriptions/status")
+      .then(r => r.json())
+      .then(data => setStatus(data.status));
+  }, []);
+
+  return {
+    status,
+    isActive: status === "active" || status === "on_trial",
+    isPaused: status === "paused",
+  };
+}
+```
+
+## Payment Failed Handling
+
+The `subscription_payment_failed` webhook → status `past_due`. Typical flow:
+
+1. Status update in the DB
+2. Trigger notification:
+   - Send an email to the user ("Payment failed, update payment method")
+   - Show an in-app banner warning
+3. User needs to update their payment method
+4. LS retries payment → on success, `subscription_payment_success` webhook → status back to `active`
+5. If retries exhaust (usually 3-4 attempts), status → `unpaid` → `expired`
+
+> ⏳ **Customer Portal — Extension point.** LS exposes a `customer_portal` URL in subscription/customer attributes (see `LSSubscriptionAttributes.urls.customer_portal` in `src/modules/commerce/types.ts`). The boilerplate doesn't ship an endpoint to surface this URL to users — implement it yourself if you need a self-service payment-method-update flow. Example:
+>
+> ```ts
+> // src/app/api/commerce/subscriptions/[id]/portal/route.ts
+> export async function GET(req, { params }) {
+>   const { id } = await params;
+>   const subscription = await getSubscriptionFromLS(id);
+>   return Response.json({ url: subscription.attributes.urls.update_payment_method });
+> }
+> ```
+
+## Troubleshoot
+
+### Pause / Resume API Returns an Error
+
+- The user doesn't have permission (the subscription isn't theirs)
+- The LS API key is revoked — reconnect
+- The subscription status doesn't allow the action (e.g. pausing an already-cancelled subscription)
+
+### Status Doesn't Update After User Pauses from the App
+
+- The webhook isn't registered for the `subscription_paused` event → enable it in the LS Dashboard
+- Webhook delivery failed (401 / 404 / 500) — check the LS delivery log
+
+### Trial Ended but Status Still `on_trial`
+
+- LS sends the `subscription_expired` event when a trial ends without a payment method
+- Check the handler processes that event
+
+### `ends_at` Is Null Even Though Status Is `cancelled`
+
+- LS returns `ends_at` in the `subscription_cancelled` payload — the handler needs to read it
+- Check the handler code in `src/modules/commerce/services/webhooks.service.ts`

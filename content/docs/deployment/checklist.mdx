@@ -1,0 +1,276 @@
+---
+title: Pre-Launch Checklist
+description: Verify everything's ready before going to production
+---
+
+This checklist covers everything to check before launching production. Skip any step = risk users hitting a broken flow on day one.
+
+## 1. Environment Variables
+
+Every env var has to be set in the production environment (Vercel or another provider):
+
+### Required
+
+- [ ] `NEXT_PUBLIC_SUPABASE_URL` — production Supabase project
+- [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` — production anon key
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` — production service role (DO NOT mix with the dev key)
+- [ ] `ENCRYPTION_KEY` — base64 32 bytes, **backed up in a password manager**
+- [ ] `RESEND_API_KEY` — production Resend key
+- [ ] `RESEND_FROM_EMAIL` — sender from a verified domain
+- [ ] `SUPABASE_AUTH_HOOK_SECRET` — format `v1,whsec_xxx` (legacy alias `SEND_EMAIL_HOOK_SECRET` still works but prefer canonical name)
+- [ ] `NEXT_PUBLIC_APP_URL` — production domain
+
+### Branding (Optional, defaults exist)
+
+- [ ] `NEXT_PUBLIC_APP_NAME` — your brand
+- [ ] `NEXT_PUBLIC_APP_SHORT_NAME` — for email subjects + PWA
+- [ ] `NEXT_PUBLIC_APP_DESCRIPTION` — meta + SEO
+- [ ] `NEXT_PUBLIC_APP_PRIMARY_COLOR` — email + PWA accent
+
+Details at [Environment Variables](/docs/environment-variables).
+
+## 2. Supabase Configuration
+
+### Database
+
+- [ ] `setup.sql` applied in the production project
+- [ ] Verify 8 tables exist: `user_profiles`, `activity_logs`, `commerce_*` (6 tables)
+- [ ] RLS enabled on all `public.*` tables
+- [ ] `is_admin()` helper function is callable (the setup.sql smoke check in D.2 confirms this — look for `callable ✓` in the NOTICE output)
+- [ ] `avatars` storage bucket ready
+
+### Auth Settings
+
+- [ ] **Email provider** Enabled
+- [ ] **Confirm email** ON (production)
+- [ ] **Secure email change** ON
+- [ ] **Secure password change** ON
+- [ ] **Email OTP expiry** reasonable (default 1 hour is OK)
+- [ ] `appConfig.auth.requireEmailVerification` matches the Supabase setting (true in production)
+
+### URL Configuration
+
+- [ ] **Site URL** = production domain (not localhost)
+- [ ] **Redirect URLs** include:
+  ```
+  https://yourdomain.com/api/auth/callback
+  https://yourdomain.com/api/auth/confirm
+  https://yourdomain.com/**
+  ```
+
+### OAuth Providers (if enabled)
+
+- [ ] Google OAuth:
+  - [ ] Client ID + Secret in Supabase match the Google Cloud Console
+  - [ ] Authorized JavaScript origins in Google Console include the production domain
+  - [ ] Authorized redirect URIs = `https://<PROJECT_REF>.supabase.co/auth/v1/callback`
+  - [ ] OAuth consent screen **Published** (not Testing mode)
+
+### Hooks
+
+- [ ] **Send Email Hook** Enabled
+- [ ] Hook URL = `https://yourdomain.com/api/auth/hooks/send-email`
+- [ ] Secret in hook config = `SUPABASE_AUTH_HOOK_SECRET` env (match byte-for-byte)
+
+### First Admin User
+
+- [ ] At least 1 user with role `super_admin` or `admin` exists
+- [ ] Verify they can log in + access `/admin`
+
+## 3. Resend
+
+- [ ] Domain **Verified** (DKIM + SPF + DMARC all green)
+- [ ] Production API key **not shared** with dev
+- [ ] Sender address (`RESEND_FROM_EMAIL`) = email on the verified domain
+- [ ] Test send from the Resend Dashboard succeeds to inbox
+- [ ] Domain reputation OK (check Gmail Postmaster Tools if concerned)
+
+## 4. End-to-End Email Flow
+
+Test from the production URL:
+
+- [ ] **Forgot password** — email lands in inbox (< 10 seconds), link works, reset works
+- [ ] **Magic link** — email arrives, click link auto-logs in
+- [ ] **Signup confirmation** (if `requireEmailVerification: true`) — email arrives, verify works
+- [ ] **Email change** — verify new email + confirm old email
+- [ ] **Reauthentication** — OTP code email (if used)
+
+Check:
+
+- Sender uses your domain (not `@supabase.io`)
+- Subject uses your brand (`{shortName}`)
+- Accent color uses `NEXT_PUBLIC_APP_PRIMARY_COLOR`
+- Not landing in spam (primary inbox)
+
+## 5. Commerce (if used)
+
+### Lemon Squeezy Account
+
+- [ ] Production LS account ready (not sandbox/test)
+- [ ] Active store with at least 1 published product
+- [ ] Payment method verified in LS (able to receive payments)
+
+### App Integration
+
+- [ ] First merchant user has connected their credential at `/settings/integrations`
+- [ ] Webhook config generated per user
+- [ ] Webhook registered in the LS Dashboard with the production URL
+- [ ] LS webhook events enabled: `order_*`, `subscription_*`
+- [ ] Test webhook delivery from the LS Dashboard — response 200
+
+### Test Transaction
+
+- [ ] Perform a test purchase (real transaction with small amount, or use LS test mode if available)
+- [ ] Verify the order appears in `/orders` in the app
+- [ ] Verify there's an entry in `commerce_webhook_events`
+- [ ] Refund the test transaction → status updates to `refunded`
+
+## 6. Performance & SEO
+
+- [ ] `pnpm build` succeeds without errors
+- [ ] Lighthouse score (mobile): Performance ≥ 80, Accessibility ≥ 95, Best Practices ≥ 95, SEO ≥ 95
+- [ ] Meta tags set: `title`, `description`, `og:image` (if available)
+- [ ] Favicon appears in the browser tab
+- [ ] PWA manifest valid (test: Chrome DevTools → Application → Manifest)
+- [ ] Robots.txt + sitemap (if public-facing)
+
+## 7. Security
+
+### Service Role Key
+
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` is **only** set on the server (no `NEXT_PUBLIC_` prefix)
+- [ ] Used only in `/api/commerce/webhooks/[token]/route.ts`
+- [ ] No leak in the client bundle — verify via:
+  ```bash
+  pnpm build
+  grep -r "SUPABASE_SERVICE_ROLE" .next/static/
+  # Should match nothing
+  ```
+
+### Encryption Key
+
+- [ ] `ENCRYPTION_KEY` backed up in **at least 2 locations** (password manager + secure cloud storage)
+- [ ] Never committed to Git (`git log -p | grep ENCRYPTION_KEY` — no match)
+- [ ] Same across production and staging if they share a database
+
+### Passwords & Secrets
+
+- [ ] Supabase database password **generated strongly** + stored in password manager
+- [ ] LS API keys **per-user** (not shared)
+- [ ] Webhook secrets **rotated** if they ever leaked during development
+- [ ] All .env files in `.gitignore`:
+  ```bash
+  git check-ignore .env.local .env.production
+  # Output should list both files
+  ```
+
+### Headers
+
+- [ ] Security headers set (Next.js defaults + custom if any):
+  - `X-Frame-Options: SAMEORIGIN`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Strict-Transport-Security` (HTTPS enforce)
+
+## 8. Database Backup
+
+- [ ] Supabase auto-backup active (check Dashboard → Database → Backups)
+- [ ] Backup retention acceptable (free: 7 days, pro: up to 30)
+- [ ] Restore procedure **already tested** in staging (don't wait for disaster)
+- [ ] Schema migration history in Git (every `supabase/migrations/*.sql` committed)
+
+## 9. Monitoring & Alerting
+
+Minimum viable:
+
+- [ ] Vercel Logs accessible (built-in, 24-hour retention free)
+- [ ] Resend Dashboard → Emails monitored
+- [ ] Supabase Dashboard → Logs accessible
+
+Advanced (optional):
+
+- [ ] Sentry / similar for error tracking
+- [ ] Uptime monitoring (UptimeRobot, Better Uptime)
+- [ ] Alert channel (Slack, email) for critical errors
+
+## 10. Documentation & Runbook
+
+- [ ] Project README.md up-to-date
+- [ ] Env vars documented (refer to boilerplate docs + your custom vars)
+- [ ] Runbook for common ops:
+  - Restart deployment
+  - Rotate secrets (API keys, encryption key)
+  - Restore DB from backup
+  - Rollback to previous deployment
+- [ ] On-call / escalation contact for the team
+
+## 11. Legal & Compliance
+
+### Public-Facing App
+
+- [ ] Privacy Policy page published (URL in footer)
+- [ ] Terms of Service published
+- [ ] Cookie consent banner (if targeting EU / California)
+- [ ] Contact email / support channel listed
+
+### Data Handling
+
+- [ ] GDPR / compliance requirements met (if applicable)
+- [ ] User data deletion procedure defined (manual or automated)
+- [ ] Data retention policy defined (e.g. delete inactive users > 2 years)
+
+### Commerce
+
+- [ ] LS Merchant of Record — verify terms agreement signed in the LS Dashboard
+- [ ] Pricing + refund policy clear on the product page / terms
+- [ ] Tax handling clear (LS handles EU VAT, US sales tax)
+
+## 12. Rollback Plan
+
+Prepare **before** launch:
+
+- [ ] Previous stable deployment identified (Vercel Deployments)
+- [ ] Database backup point identified (Supabase Backups)
+- [ ] Rollback procedure tested in staging
+- [ ] Communication plan (how to notify users if there's an issue)
+
+## 13. Team Alignment
+
+- [ ] Launch time agreed (avoid Friday afternoon — nobody cares about weekend fixes)
+- [ ] On-call person assigned for the first 24 hours post-launch
+- [ ] Communication channel active (Slack, Discord)
+- [ ] Stakeholders notified of the launch time
+
+## Post-Launch First 24 Hours
+
+Monitor actively:
+
+- [ ] Vercel Logs — error rate
+- [ ] Supabase Logs — database errors, slow queries
+- [ ] Resend Dashboard — email delivery rate, bounces
+- [ ] LS Dashboard — webhook delivery, failed transactions (if commerce)
+- [ ] User feedback channel — complaints / bug reports
+
+If there's a critical issue (signup broken, payments failing, etc.):
+
+1. Assess impact (how many users affected)
+2. Rollback if needed (< 5-minute procedure via Vercel)
+3. Hotfix + redeploy if the root cause is quickly identifiable
+4. Post-mortem after resolved
+
+## Go / No-Go Decision
+
+Launch if:
+
+- ✅ Every **Required** in sections 1, 2, 3, 4, 5 (if commerce) is checked
+- ✅ End-to-end smoke test succeeded on the production URL
+- ✅ Rollback plan ready
+
+No-go if:
+
+- ❌ Any required env var is empty
+- ❌ Email delivery failed in tests
+- ❌ Any auth flow is broken (login / signup / reset password)
+- ❌ No backup / rollback strategy
+
+**When in doubt → delay the launch.** A broken launch is worse than a late launch.

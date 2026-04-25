@@ -1,0 +1,251 @@
+---
+title: Webhooks
+description: Per-user LS webhook config + HMAC verification
+---
+
+The LS webhook is the main path for order + subscription data into the app. Without it, users check out in LS but the app never knows → data doesn't sync.
+
+## Per-User Webhook Architecture
+
+The boilerplate uses **per-user webhook URLs** — every user has a unique URL with a random token, mirroring the per-user LS credential.
+
+```
+User A webhook URL:
+  https://app.com/api/commerce/webhooks/abc123def456...
+
+User B webhook URL:
+  https://app.com/api/commerce/webhooks/xyz789uvw012...
+```
+
+Token properties:
+
+- Random 32-byte base64url (URL-safe)
+- Unique per user (`commerce_webhook_configs.token UNIQUE`)
+- Doesn't expose the user ID in the URL (not predictable)
+- Users can regenerate anytime
+
+The token routes to a user via a DB query: `SELECT user_id FROM commerce_webhook_configs WHERE token = ?`. Then it fetches the user's encrypted secret, decrypts it, and verifies the HMAC using that secret.
+
+## Setup
+
+### Step 1 — Generate the Webhook Config in the App
+
+1. Log into the app
+2. Navigate to `/settings/integrations` (or `/settings/webhooks` — check the UI)
+3. **Webhook** section → click **Generate Webhook**
+
+The UI shows two values:
+
+- **Webhook URL** — `https://your-app.com/api/commerce/webhooks/{token}`
+- **Webhook Secret** — random string (DO NOT leak)
+
+Behind the scenes:
+
+- A new row in `commerce_webhook_configs` with a random token + encrypted secret
+- Activity log: `commerce.webhook_config_created`
+
+### Step 2 — Register in the LS Dashboard
+
+1. Log into [app.lemonsqueezy.com](https://app.lemonsqueezy.com)
+2. Sidebar → **Settings** → **Webhooks**
+3. Click **+ Create webhook**
+4. **Callback URL**: paste the webhook URL from the app
+5. **Signing secret**: paste the webhook secret from the app
+6. **Events**: pick the events to listen to (details below)
+7. Save
+
+### Step 3 — Test Delivery
+
+LS Dashboard → newly created webhook → **Test webhook**.
+
+In the app:
+
+- Check the terminal / Vercel Logs — you should see `Received webhook event: {type}` with status 200
+- DB: `commerce_webhook_events` has a new row
+
+If the test fails:
+
+- 401 `invalid_signature` → LS's secret differs from the app's (check char-by-char, no spaces)
+- 404 → wrong token in the URL
+- 500 → server error (check logs)
+
+## LS Events Handled
+
+The boilerplate handles these events (see `src/modules/commerce/services/webhooks.service.ts`):
+
+| Event Type | Action |
+|---|---|
+| `order_created` | Upsert to `commerce_orders` |
+| `order_refunded` | Update order status → `refunded` |
+| `subscription_created` | Upsert to `commerce_subscriptions` |
+| `subscription_updated` | Update status (pause / resume) |
+| `subscription_cancelled` | Update status → `cancelled` |
+| `subscription_resumed` | Update status → `active` |
+| `subscription_expired` | Update status → `expired` |
+| `subscription_paused` | Update status → `paused` |
+| `subscription_unpaused` | Update status → `active` |
+| `subscription_payment_success` | Optional — update last_payment_date |
+| `subscription_payment_failed` | Optional — update status, alert user |
+
+Other events (e.g. `license_key_created`) are ignored — returns 200 without action.
+
+### Selecting Events in LS
+
+In the LS Dashboard, enable at minimum:
+
+- `order_created` — required
+- `order_refunded` — if you support refunds
+- `subscription_created` — if you use subscriptions
+- `subscription_updated`, `subscription_cancelled`, `subscription_resumed`, `subscription_paused`, `subscription_unpaused`, `subscription_expired` — subscription lifecycle
+- `subscription_payment_success`, `subscription_payment_failed` — if you track recurring payments
+
+Enabling everything is safe — the handler ignores events it doesn't handle.
+
+## HMAC Verification
+
+Every webhook request from LS carries an `X-Signature` header — HMAC-SHA256 hex of the body using the secret.
+
+The handler:
+
+```ts
+// Simplified
+import { createHmac, timingSafeEqual } from "crypto";
+
+const signature = request.headers.get("x-signature");
+const body = await request.text();
+const expected = createHmac("sha256", decryptedSecret).update(body).digest("hex");
+
+const valid = timingSafeEqual(
+  Buffer.from(signature),
+  Buffer.from(expected),
+);
+
+if (!valid) return new Response("invalid signature", { status: 401 });
+```
+
+**`timingSafeEqual`** is used to prevent timing attacks — byte-by-byte comparison in constant time regardless of where the mismatch occurs.
+
+Source: `src/modules/commerce/lib/webhook-verify.ts`.
+
+## Idempotency
+
+LS retries a webhook when the response isn't 200 (roughly 3 retries with exponential backoff — 60s, 5m, 30m; exact behavior may change, check LS docs).
+
+The handler prevents double-processing via a unique constraint:
+
+```sql
+CREATE TABLE commerce_webhook_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id text UNIQUE NOT NULL,  -- from LS payload
+  user_id uuid NOT NULL,
+  event_type text NOT NULL,
+  payload jsonb NOT NULL,
+  processed_at timestamptz DEFAULT now()
+);
+```
+
+Flow:
+
+```ts
+const { error } = await supabase
+  .from("commerce_webhook_events")
+  .insert({ event_id, user_id, event_type, payload });
+
+if (error?.code === "23505") {
+  // Unique constraint violation — event has already been processed
+  return new Response("ok", { status: 200 });  // ack without reprocessing
+}
+
+// First time — proceed to upsert orders/subscriptions
+```
+
+## Regenerating the Webhook Token / Secret
+
+Users can regenerate their webhook config:
+
+- `/settings/integrations` → Webhook section → **Regenerate**
+
+Effects:
+
+- The `commerce_webhook_configs` row updates with a new token + secret
+- The old URL is **immediately invalid** — webhooks to the old URL return 404
+
+**You MUST update the LS Dashboard after regenerating** — replace the URL + secret in the LS webhook config. Skip this step and webhook delivery keeps failing.
+
+## Local Dev with ngrok
+
+Similar to the [Send Email Hook setup](/docs/email/setup#option-b-dev-testing-with-ngrok):
+
+1. Start `pnpm dev` + `ngrok http 3000`
+2. Paste the ngrok URL into the LS webhook config (replace `your-app.com` with the ngrok URL)
+3. Test
+
+ngrok free tier URLs change on every restart → you'll need to update the LS Dashboard each time. Same workarounds as Send Email Hook:
+
+- Paid ngrok — static subdomain
+- Cloudflare Tunnel — free static URL
+
+## Disable Webhook
+
+Option 1 — Delete in the LS Dashboard:
+
+- LS → Webhook → **Delete**
+- LS stops sending webhooks
+
+Option 2 — Delete in the App:
+
+- `/settings/integrations` → Webhook → **Delete**
+- The `commerce_webhook_configs` row is deleted
+- The old token is invalid → if LS still sends, it returns 404
+
+Option 3 — Disable in LS (keep config):
+
+- LS → Webhook → toggle **Disabled**
+- The webhook isn't triggered, but the config is preserved
+
+## Production Checklist
+
+- [ ] The webhook URL in the LS Dashboard points to the production domain (not ngrok / localhost)
+- [ ] The webhook secret in LS matches the value in `commerce_webhook_configs` (decrypted)
+- [ ] Relevant events are ✓ enabled in LS
+- [ ] Test webhook delivery from the LS Dashboard — response 200
+- [ ] Monitor LS Dashboard → Webhook → **Delivery attempts** during the first 24 hours
+
+## Troubleshoot
+
+### Webhook delivery attempt 401 `invalid_signature`
+
+- The secret in LS differs from the app — paste again, check for hidden whitespace
+- Decryption failed on the app side → `ENCRYPTION_KEY` differs between when the webhook config was created vs when the handler runs (e.g. you rotated the key)
+
+Fix: regenerate the webhook config in the app → copy the new URL + secret → update in LS.
+
+### 404 Not Found
+
+- The URL token is wrong — copy again from `/settings/integrations`
+- The `commerce_webhook_configs` row was deleted → regenerate
+
+### Webhook 200 but Data Doesn't Appear in DB
+
+- The handler returned 200 early (e.g. idempotency hit) → check `commerce_webhook_events` — has the event been recorded?
+- The event type isn't handled → check handler logs
+- The RLS policy blocked insert (rare, since the handler uses service role) → verify the service role key is correct
+
+### LS Dashboard — "Delivery Failed" Repeatedly
+
+- Endpoint keeps returning 5xx → check app logs, fix the error
+- Connection timeout — the hook handler is slow (> 10 seconds) → optimize, don't block on third-party calls
+
+LS stops retrying after its retry budget is exhausted. Missed webhooks have to be backfilled manually via `POST /api/commerce/orders?pages=N` (or the equivalent subscriptions / customers backfill endpoint), or from the LS Dashboard → Webhook → **Resend** attempt.
+
+### Duplicate Orders in DB
+
+- The `event_id` unique constraint doesn't exist → apply the `setup.sql` migration
+- Or a handler bug that inserts without the idempotency check
+
+Verify:
+
+```sql
+SELECT event_id, count(*) FROM commerce_webhook_events GROUP BY event_id HAVING count(*) > 1;
+-- Expected: empty result
+```

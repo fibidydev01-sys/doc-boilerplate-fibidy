@@ -1,0 +1,8 @@
+{
+  "title": "Push Notification",
+  "pages": [
+    "overview",
+    "setup",
+    "sending-notifications"
+  ]
+}

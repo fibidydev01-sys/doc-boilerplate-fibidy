@@ -1,0 +1,385 @@
+---
+title: Setup
+description: Register Send Email Hook, set up ngrok for local dev, common troubleshooting
+---
+
+**This is the page beta testers get confused on most often.** Read slowly.
+
+## Prerequisites
+
+Before starting, make sure:
+
+- Your [Supabase project](/docs/setup/supabase) is ready (at minimum `setup.sql` has run)
+- [Resend](/docs/setup/resend) is set up (domain verified + API key in hand)
+- `RESEND_API_KEY` + `RESEND_FROM_EMAIL` env vars are set in `.env.local`
+- The app runs at `localhost:3000` (`pnpm dev`)
+
+> ⚠️ **Note on language:** the shipped email templates (including subjects) are hardcoded Indonesian. The test steps below reflect that. If you plan to target English users, translate the templates **before** running these tests — see [Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+
+## Hook URL
+
+The endpoint Supabase will call:
+
+```
+POST {APP_URL}/api/auth/hooks/send-email
+```
+
+**Problem:** Supabase needs a public URL reachable from the internet. `http://localhost:3000` **can't** be reached by Supabase from outside.
+
+**Two options:**
+
+| Option | When it fits |
+|---|---|
+| **A. Deploy to Vercel first** | Production setup, or dev pointing at a staging URL |
+| **B. ngrok tunnel** | Local dev with traffic coming directly from the hook |
+
+---
+
+## Option A: Production / Staging URL
+
+If already deployed to Vercel:
+
+```
+https://my-app.vercel.app/api/auth/hooks/send-email
+```
+
+Skip directly to [Register Hook](#register-hook).
+
+---
+
+## Option B: Dev Testing with ngrok
+
+Tunnel `localhost:3000` to a public URL via ngrok.
+
+### 1. Install ngrok
+
+- Download: [ngrok.com/download](https://ngrok.com/download)
+- Or use a package manager:
+
+  ```bash
+  # macOS
+  brew install ngrok
+
+  # Windows (winget)
+  winget install ngrok
+  ```
+
+### 2. Sign Up + Set Up Authtoken
+
+1. Create a free account at [dashboard.ngrok.com](https://dashboard.ngrok.com)
+2. Dashboard → **Your Authtoken** → copy
+3. Run:
+   ```bash
+   ngrok config add-authtoken <YOUR_AUTHTOKEN>
+   ```
+
+### 3. Start Dev Server + Tunnel
+
+In the first terminal:
+
+```bash
+pnpm dev
+# App runs at localhost:3000
+```
+
+In a second terminal (keep it open in parallel):
+
+```bash
+ngrok http 3000
+```
+
+Output:
+
+```
+Session Status                online
+Forwarding                    https://abc-123-456-789.ngrok-free.app -> http://localhost:3000
+```
+
+**Note the URL `https://abc-123-...ngrok-free.app`** — that's your hook URL for this session.
+
+### 4. ⚠️ ngrok Free Tier — URL Changes on Every Restart
+
+Every time you restart `ngrok http 3000`, the URL changes. Which means you need to **re-register the hook** in Supabase every ngrok restart (changing the URL in the hook config).
+
+**Workarounds:**
+
+- **Paid ngrok** (~$8/month) — gets you a static subdomain
+- **Alternative tunnel services:** [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (free, static URL), [localhost.run](https://localhost.run), [localtunnel](https://localtunnel.github.io/www/)
+
+For regular dev, build a workflow:
+
+1. Start `pnpm dev`
+2. Start `ngrok http 3000`
+3. Copy the new URL
+4. Update the Supabase hook URL
+5. Test
+
+3-5 minutes per session.
+
+### 5. (Optional) Update `NEXT_PUBLIC_APP_URL`
+
+So the verification URL inside emails points to the ngrok URL:
+
+```bash
+# .env.local
+NEXT_PUBLIC_APP_URL=https://abc-123-456-789.ngrok-free.app
+```
+
+Restart the dev server so the env reloads.
+
+Without this, the link in the email points to `localhost:3000` and can't be clicked from another device.
+
+---
+
+## Register Hook
+
+This step is **required** regardless of option A or B.
+
+### 1. Open the Hook Config
+
+1. Supabase Dashboard → **Authentication** → **Hooks**
+2. Find the **Send Email hook** section
+3. Click **Enable hook**
+
+### 2. Fill the Form
+
+- **Hook type**: **HTTPS**
+- **Hook URL**:
+  ```
+  https://your-domain.com/api/auth/hooks/send-email
+  ```
+  (replace with your production URL or ngrok URL)
+
+### 3. Generate Secret
+
+Click **Generate secret** (below the form).
+
+Supabase generates a value with the format:
+
+```
+v1,whsec_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
+```
+
+### 4. COPY the Secret NOW
+
+⚠️ **Don't close the dialog before copying.** After save, the secret can still be viewed, but the workflow is more painful.
+
+### 5. Click Save
+
+Hook is active.
+
+### 6. Set the Secret in Env
+
+Paste into `.env.local`:
+
+```bash
+SUPABASE_AUTH_HOOK_SECRET=v1,whsec_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
+```
+
+⚠️ **Format is CRITICAL:**
+
+- **MUST** include the `v1,` prefix (comma, no space)
+- **MUST** include the `whsec_` prefix after that
+- If you copy just the random string portion, HMAC verify fails → 401 → email not sent
+
+Restart the dev server.
+
+> **Legacy alias:** `verify-webhook.ts` also reads `SEND_EMAIL_HOOK_SECRET` as a fallback. If you have an older deployment using that name, it still works — but prefer `SUPABASE_AUTH_HOOK_SECRET` for new envs to match the Supabase dashboard nomenclature.
+
+Details on the format at [Environment Variables](/docs/environment-variables#41-supabase_auth_hook_secret).
+
+### 7. Set the Secret in Vercel (if Production)
+
+Vercel Dashboard → project → **Settings** → **Environment Variables**:
+
+- **Name**: `SUPABASE_AUTH_HOOK_SECRET`
+- **Value**: paste the secret (with the `v1,` prefix)
+- **Environments**: Production (+ Preview if you want to test)
+
+Redeploy to apply.
+
+---
+
+## Test End-to-End
+
+> 💡 **Expected copy reflects shipped templates (Indonesian).** If you've already translated the templates, your subjects will differ.
+
+### Test 1: Forgot Password
+
+1. In the app, open `/forgot-password`
+2. Submit a registered email
+3. **Expected:**
+   - UI shows a success message (generic, anti-enumeration)
+   - Email lands in the inbox within ~10 seconds
+   - Email uses your sender (not `@supabase.io`)
+   - Subject: `Reset password {shortName}` (hardcoded Indonesian)
+   - Reset button uses the primary color from env
+   - The reset link points to `/api/auth/callback` or `/reset-password`
+
+### Test 2: Magic Link
+
+1. Open `/login`, pick the **Magic Link** tab
+2. Submit a registered email
+3. Email arrives with subject `"Tautan masuk {shortName}"` (or `"Masuk ke {shortName}"` for new-user signup flow — templates treat magic link and signup the same)
+4. Click the link → auto-login → redirect to the dashboard
+
+### Test 3: Signup (if `requireEmailVerification: true`)
+
+1. Register a new email at `/register`
+2. Email arrives — subject `"Masuk ke {shortName}"` (the dispatcher routes signup confirm through the magic-link template)
+3. Click the link → verify → auto-login
+
+### Verify in the Dashboard
+
+**Resend Dashboard → Emails** — you should see a log:
+
+- **Delivered** — email lands in the user's inbox ✅
+- **Bounced** — invalid email address (check typos)
+- **Complained** — user marked as spam (rare in test env)
+
+**Supabase Dashboard → Authentication → Hooks → Recent invocations** — check:
+
+- Status code **200** → hook successfully invoked
+- Status **401** → HMAC verify failed (check `SUPABASE_AUTH_HOOK_SECRET`)
+- Status **500** → server error (check Vercel Logs or the `pnpm dev` terminal)
+
+---
+
+## Troubleshoot
+
+### Hook Returns 401 "invalid_signature"
+
+**Most common cause:** `SUPABASE_AUTH_HOOK_SECRET` format is wrong.
+
+Checklist:
+
+- [ ] Value starts with `v1,` (comma, no space)
+- [ ] Followed by the `whsec_` prefix
+- [ ] No quotes (`"..."`) around the env value (pasting directly into `.env.local` without quotes is OK)
+- [ ] Dev server restarted after editing `.env.local`
+
+Correct example:
+
+```bash
+SUPABASE_AUTH_HOOK_SECRET=v1,whsec_AbCdEfGhIjKlMnOpQrStUvWxYz1234567890
+```
+
+Incorrect examples:
+
+```bash
+# ❌ Missing the v1, prefix
+SUPABASE_AUTH_HOOK_SECRET=whsec_AbCdEfGh...
+
+# ❌ Space after the comma
+SUPABASE_AUTH_HOOK_SECRET=v1, whsec_AbCdEfGh...
+
+# ❌ Just the random string without the prefixes
+SUPABASE_AUTH_HOOK_SECRET=AbCdEfGhIjKlMnOp...
+```
+
+Still not right? Regenerate in Supabase Dashboard → Authentication → Hooks → **Regenerate secret** → copy again.
+
+### Hook Returns 500 "server_misconfigured"
+
+A required env var is empty. Check in order:
+
+- [ ] `SUPABASE_AUTH_HOOK_SECRET` filled in (or legacy `SEND_EMAIL_HOOK_SECRET` — either works, but canonical is preferred)
+- [ ] `RESEND_API_KEY` filled in
+- [ ] `RESEND_FROM_EMAIL` filled in with a valid format
+
+### Hook Returns 500 "missing_secret" (seen in logs)
+
+`verify-webhook.ts` couldn't find EITHER env var. This happens when:
+
+- The env var name is misspelled (e.g. `SUPABASE_HOOK_SECRET` without `AUTH`, or `SEND_EMAIL_SECRET` missing `HOOK`)
+- The env var isn't set in the current environment (dev `.env.local` vs Vercel production — they're separate)
+- A new deployment was made without re-setting env vars
+
+Fix: verify with `env | grep HOOK` in the running environment.
+
+### Hook Status "Recent invocation: ✓ 200" but Email Doesn't Arrive
+
+The hook was successfully invoked + verified + rendered, but Resend failed to send. Check the Resend Dashboard:
+
+- **Emails** log — status `Failed`? See the error detail
+- **Domain** — still `Verified`? Sometimes DNS records change / expire
+- **API Key** — still active? Never revoked?
+
+If everything's OK but email still doesn't arrive:
+
+- Check the spam folder
+- Check domain reputation at [Gmail Postmaster Tools](https://postmaster.google.com)
+- Try a test send to another email (Yahoo, Outlook, ProtonMail) — if only Gmail rejects, likely a DKIM / SPF issue specific to them
+
+### Invocation Status: No Recent Invocations
+
+Supabase never called the hook. Causes:
+
+- Hook not saved in the Dashboard → open Supabase Hooks → verify the hook exists and is enabled
+- **Email provider** (under Providers → Email) disabled → enable it
+- Hook URL is wrong — test manually with `curl`:
+  ```bash
+  curl -X POST https://your-app.com/api/auth/hooks/send-email
+  # Expected: 400 "Content-Type must be application/json" (because no POST body)
+  # If: connection refused / 404 → URL is wrong
+  ```
+
+### Email Is Sent, But Subject Is English When You Expect Indonesian (or Vice Versa)
+
+Shipped default subjects are hardcoded Indonesian. If you see something else:
+
+- Your fork has already translated the `getSubject()` function — expected
+- The hook isn't active (falling back to Supabase default SMTP template, which uses the generic Supabase default copy) — check hook status
+- HMAC verify failed → Supabase fell back
+
+Fix: ensure the hook is active + HMAC verify passes (test 1 above).
+
+### Email Lands from `@mail.app.supabase.io` Instead of Your Domain
+
+The hook isn't active OR HMAC verify is failing silently and Supabase fell back to default SMTP.
+
+Fix:
+
+1. Supabase Dashboard → Authentication → Hooks → Send Email Hook → make sure toggle is **ON**
+2. Check Recent invocations — if 401/500 status, see HMAC fix above
+3. Trigger a test (register new email) → within 60s check Resend Dashboard — if no log there, hook not firing at all
+
+### ngrok URL Changes on Every Restart — Tired of Updating the Hook
+
+Options:
+
+1. **Upgrade to paid ngrok** — $8/month for a static subdomain
+2. **Use Cloudflare Tunnel** (free, static URL via `cloudflared`)
+3. **Deploy staging to Vercel** + use the staging URL
+4. **Supabase CLI local dev** — run Supabase in Docker, no tunnel needed
+
+Pick the one that fits your workflow.
+
+### "Failed to send email: Missing API key" in Vercel Logs
+
+`RESEND_API_KEY` isn't set in Vercel. Vercel env vars are separate from `.env.local`:
+
+Vercel Dashboard → project → Settings → Environment Variables → add `RESEND_API_KEY` → Save → Redeploy.
+
+### Email Works in Dev but Not in Production
+
+Possibilities:
+
+- Hook URL in Supabase still points at the ngrok / dev URL → update to the production URL
+- `SUPABASE_AUTH_HOOK_SECRET` in Vercel differs from the Supabase value → re-sync
+
+If you have **one Supabase project** but 2 environments (dev + prod), you have to pick: hook points at the dev URL or the prod URL. **You can't have both at once.** Best practice: **2 separate Supabase projects** (one per env).
+
+---
+
+## Production Checklist
+
+Before go-live:
+
+- [ ] Hook URL in Supabase points to the production domain (not ngrok / localhost)
+- [ ] `SUPABASE_AUTH_HOOK_SECRET` in Vercel matches the Supabase Dashboard
+- [ ] `RESEND_API_KEY` + `RESEND_FROM_EMAIL` set in Vercel Production scope
+- [ ] Resend domain is `Verified`
+- [ ] End-to-end test from the production URL (forgot password, magic link, signup)
+- [ ] Email templates translated to target-audience language (if not Indonesian)
+- [ ] Monitor the Resend Dashboard + Supabase Hook Recent Invocations during the first 24 hours of go-live

@@ -1,0 +1,242 @@
+---
+title: Supabase Setup
+description: Create a project, run migrations, configure auth providers, register Send Email Hook
+---
+
+Supabase handles: database, auth, storage, and auth email delivery via a hook (which we render via Resend).
+
+## 1. Create a New Project
+
+1. Log into [supabase.com/dashboard](https://supabase.com/dashboard)
+2. Click **New project**
+3. Fill in the form:
+   - **Name**: anything (e.g. `my-boilerplate-dev`)
+   - **Database Password**: generate a strong password — **save it to your password manager**, since you can't view it again, only reset
+   - **Region**: closest to the majority of users (US users → **East US (Virginia)** or similar)
+   - **Pricing Plan**: Free
+4. Click **Create new project**, wait 2-3 minutes until status is **Active**
+
+## 2. Grab Credentials
+
+1. Left sidebar → **Project Settings** (gear icon at bottom) → **Data API**
+2. Copy these 3 values:
+
+| In Dashboard | Env var |
+|---|---|
+| **Project URL** (`https://xxx.supabase.co`) | `NEXT_PUBLIC_SUPABASE_URL` |
+| **anon public** key | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| **service_role secret** key (click **Reveal**) | `SUPABASE_SERVICE_ROLE_KEY` |
+
+> ⚠️ **The `service_role` key bypasses RLS.** Anyone with this key can read/write every table without auth checks. NEVER expose it to the browser, NEVER commit to Git, NEVER use the `NEXT_PUBLIC_` prefix for this variable.
+
+Paste into `.env.local` later (step 4). Format details in [Environment Variables](/docs/environment-variables).
+
+## 3. Run the Database Migration
+
+Sets up every table, RLS policy, trigger, and storage bucket in one run.
+
+1. Supabase sidebar → **SQL Editor**
+2. Click **+ New query**
+3. Open `supabase/setup.sql` in the boilerplate project
+4. Copy the **entire** contents, paste into the SQL Editor
+5. Click **Run** (or `Ctrl+Enter`)
+6. Wait ~5-10 seconds
+
+**Expected output** (in the panel below the SQL Editor):
+
+```
+NOTICE: ====================================================
+NOTICE: SETUP COMPLETE
+NOTICE: ====================================================
+NOTICE: user_profiles              : 0 rows
+NOTICE: activity_logs              : 0 rows
+NOTICE: commerce_credentials       : 0 rows
+NOTICE: commerce_webhook_configs   : 0 rows
+NOTICE: commerce_webhook_events    : 0 rows
+NOTICE: commerce_orders            : 0 rows
+NOTICE: commerce_subscriptions     : 0 rows
+NOTICE: commerce_customers         : 0 rows
+NOTICE: avatars bucket             : ready ✓
+NOTICE: is_admin() function        : callable ✓
+NOTICE: ====================================================
+```
+
+Red errors? See [Troubleshooting](/docs/troubleshooting#database-schema-errors).
+
+## 4. Set Up Auth Providers
+
+### Email + Password (Default)
+
+1. Supabase sidebar → **Authentication** → **Providers**
+2. **Email** row → must be ✅ **Enabled** (default is on)
+3. Important settings:
+
+| Setting | Dev | Production |
+|---|---|---|
+| Confirm email | Off (login immediately after signup) | **On** (prevent fake accounts) |
+| Secure email change | Off | **On** |
+| Secure password change | Off | **On** |
+
+### Magic Link
+
+Auto-active when the Email provider is enabled. **Delivery will be routed through Send Email Hook** (custom template via Resend), not Supabase default SMTP — that's what we set up in step 6.
+
+### Google OAuth (Optional)
+
+**In the [Google Cloud Console](https://console.cloud.google.com):**
+
+1. **Create project** or pick an existing one
+2. Sidebar → **APIs & Services** → **OAuth consent screen**
+   - User Type: **External**
+   - Fill in App name, support email, developer contact
+   - Save & continue → skip scopes → (dev mode: add test users) → Save
+3. Sidebar → **Credentials** → **+ Create credentials** → **OAuth client ID**
+   - Application type: **Web application**
+   - **Authorized JavaScript origins**:
+     ```
+     http://localhost:3000
+     https://your-production-domain.com
+     ```
+   - **Authorized redirect URIs**:
+     ```
+     https://<YOUR_PROJECT_REF>.supabase.co/auth/v1/callback
+     ```
+     > ⚠️ **This is the Supabase URL, not your app URL.** Supabase handles the OAuth callback, then forwards to the app. Getting this wrong = `redirect_uri_mismatch` error.
+   - Create → copy **Client ID** + **Client Secret**
+
+**In the Supabase Dashboard:**
+
+1. **Authentication** → **Providers** → **Google**
+2. Toggle **Enabled**
+3. Paste Client ID + Client Secret
+4. **Save**
+
+More details in [Google OAuth](/docs/authentication/google-oauth).
+
+## 5. Redirect URLs (REQUIRED — Easily Missed)
+
+If you skip this step, OAuth + magic link + password reset **will fail** with "Redirect URL not allowed".
+
+1. **Authentication** → **URL Configuration**
+2. **Site URL**:
+   - Dev: `http://localhost:3000`
+   - Prod: change to your production domain when deploying
+3. **Redirect URLs** — add all of these (one per line):
+   ```
+   http://localhost:3000/api/auth/callback
+   http://localhost:3000/api/auth/confirm
+   http://localhost:3000/**
+   ```
+4. **Save**
+
+Add production URLs (+ Vercel preview wildcard) after deploying.
+
+## 6. Send Email Hook (CRITICAL for Auth Email)
+
+The main feature that makes auth emails use a custom template via Resend instead of Supabase's default SMTP.
+
+### Why the Hook?
+
+Supabase's default built-in SMTP:
+- Rate limit ~3 emails/hour per user
+- Template is basic HTML, no brand color / logo
+- Poor deliverability (often spam)
+- Sender from Supabase's domain, not yours
+
+**Send Email Hook** replaces that flow completely: Supabase delegates delivery to your custom endpoint (`/api/auth/hooks/send-email`). You have full control of the template + provider.
+
+### Prerequisites
+
+- A public URL to the `/api/auth/hooks/send-email` endpoint — in local dev, use ngrok (tutorial in [Email Setup](/docs/email/setup#option-b-dev-testing-with-ngrok))
+- Resend account set up + domain verified → [Resend Setup](/docs/setup/resend)
+
+### Register the Hook
+
+1. Supabase sidebar → **Authentication** → **Hooks**
+2. Find **Send Email hook** → click **Enable hook**
+3. Fill in:
+   - **Hook type**: **HTTPS**
+   - **Hook URL**: `https://your-app.vercel.app/api/auth/hooks/send-email`
+     (or `https://abc-123.ngrok-free.app/api/auth/hooks/send-email` if using ngrok)
+   - Click **Generate secret** → Supabase auto-generates, format `v1,whsec_xxxxx`
+4. **COPY THE SECRET NOW** — it's harder to retrieve after save
+5. Click **Create hook**
+
+### Set the Secret in Env
+
+Paste the secret into `SUPABASE_AUTH_HOOK_SECRET`:
+
+**Local (`.env.local`):**
+```bash
+SUPABASE_AUTH_HOOK_SECRET=v1,whsec_xxxxxxxxxxxxx
+```
+
+**Vercel:**
+Settings → Environment Variables → `SUPABASE_AUTH_HOOK_SECRET` → scope **Production** (also **Preview** for PR testing).
+
+> ⚠️ **Format matters:** the value MUST include the `v1,` prefix (comma-separated, no space). Without the prefix, HMAC verify fails → hook returns 401 → auth emails don't get delivered.
+
+> **Legacy name:** the boilerplate's `verify-webhook.ts` also reads `SEND_EMAIL_HOOK_SECRET` as a fallback. If you inherited an older fork that used that name, it still works — but prefer `SUPABASE_AUTH_HOOK_SECRET` for new envs so it matches the Supabase dashboard terminology.
+
+### How These Settings Relate
+
+| Email Provider (Supabase) | Send Email Hook | Result |
+|---|---|---|
+| Enabled | Enabled | **The hook handles email (via Resend).** Custom template appears. ✅ This is what we want. |
+| Enabled | Disabled | Supabase default SMTP handles it (3/hour limit, basic template). |
+| Disabled | Enabled | Email signup fully disabled. |
+| Disabled | Disabled | Email signup fully disabled. |
+
+Official reference: [Supabase docs — Send Email Hook](https://supabase.com/docs/guides/auth/auth-hooks/send-email-hook).
+
+### Skip for Now If Not Deployed Yet
+
+You can set up everything except the hook at this stage, and set up the hook later after:
+
+- Deploying to Vercel (gives you a public URL), or
+- Setting up an ngrok tunnel
+
+Before the hook is registered, auth emails (magic link, reset password) still work using Supabase default SMTP — strict limits, basic template, but enough for early testing. Full details in [Email Setup](/docs/email/setup).
+
+## 7. Create the First Admin User
+
+The database is still empty. Create the first admin so you can access `/admin`:
+
+### Step A — Sign Up a User
+
+Pick one:
+
+- **Via the app**: run `pnpm dev`, open `/login`, sign up normally
+- **Via Supabase Dashboard**: **Authentication** → **Users** → **Add user** → fill in email + password + ✓ **Auto confirm email**
+
+The `handle_new_user()` trigger auto-creates a row in `public.user_profiles` with role `user`.
+
+### Step B — Elevate to super_admin
+
+In the Supabase **SQL Editor**:
+
+```sql
+UPDATE public.user_profiles
+SET role = 'super_admin'
+WHERE email = 'your-email@example.com';
+
+-- Verify
+SELECT id, email, role, is_active
+FROM public.user_profiles
+WHERE email = 'your-email@example.com';
+```
+
+Logout → log back in so the session fetches the new role. Now you're redirected to `/admin` after login.
+
+## Checklist Before Continuing
+
+- [ ] Supabase project status **Active**
+- [ ] 3 env vars copied: URL, anon key, service_role key
+- [ ] `setup.sql` run, 8 tables + avatars bucket ready, `is_admin()` smoke-check returns `callable ✓`
+- [ ] Email provider ✅ Enabled
+- [ ] (Optional) Google OAuth configured in Google Console + Supabase
+- [ ] Redirect URLs added in Supabase URL Configuration
+- [ ] (Optional, can do later) Send Email Hook registered + secret copied to `SUPABASE_AUTH_HOOK_SECRET`
+- [ ] First admin user created, role `super_admin` or `admin`
+
+Continue to [Resend Setup](/docs/setup/resend).

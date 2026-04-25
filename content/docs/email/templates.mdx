@@ -1,0 +1,319 @@
+---
+title: Templates
+description: 5 React Email templates, customization, and i18n notes
+---
+
+## 5 Shipped Templates
+
+All in `src/shared/email/templates/`:
+
+```
+templates/
+├── _layout.tsx              ← shared shell (header, footer, brand)
+├── confirm-signup.tsx       ← verify new signup email
+├── magic-link.tsx           ← passwordless login link
+├── recovery.tsx             ← password reset
+├── email-change.tsx         ← verify new email address
+└── reauthentication.tsx     ← OTP code for sensitive operations
+```
+
+> ⚠️ **All copy is hardcoded Indonesian.** Subject lines and body text ship in Bahasa Indonesia. To translate, see [Internationalization (Hard-coded)](#internationalization-hardcoded).
+
+## Technology
+
+- **React Email** — framework for building HTML emails with React
+- **@react-email/render** — converts JSX → HTML string accepted by email clients
+- **@react-email/components** — ready-to-use primitives (`<Container>`, `<Button>`, `<Text>`, `<Section>`, etc.) rendering to HTML tables compatible with Outlook, Gmail, and Apple Mail
+
+## Dispatcher — `send-auth-email.tsx`
+
+Router that picks a template based on `email_action_type`:
+
+```ts
+switch (emailActionType) {
+  case "signup":       // routed to MagicLinkEmail with isNewUser=true
+  case "magiclink":    return <MagicLinkEmail ... />;
+  case "recovery":     return <RecoveryEmail ... />;
+  case "invite":       return <ConfirmSignupEmail ... />;
+  case "email_change": return <EmailChangeEmail ... />;
+  case "reauthentication": return <ReauthEmail ... />;
+}
+```
+
+`email_action_type` comes from the Supabase hook payload. Reference: [Supabase hook docs](https://supabase.com/docs/guides/auth/auth-hooks/send-email-hook).
+
+Note: `"signup"` action types are intentionally routed through the magic-link template with an `isNewUser` flag — from the end-user's perspective, both flows mean "click this link to sign in", so they share the template.
+
+## Subject Line (Shipped Defaults — Indonesian)
+
+Hardcoded copy inside `send-auth-email.tsx`, concatenated with `brandingConfig.shortName`:
+
+| Action | Subject |
+|---|---|
+| `signup` | `` `Masuk ke \{shortName\}` `` |
+| `magiclink` | `` `Tautan masuk \{shortName\}` `` |
+| `recovery` | `` `Reset password \{shortName\}` `` |
+| `invite` | `` `Kamu diundang ke \{shortName\}` `` |
+| `email_change` | `` `Konfirmasi perubahan email \{shortName\}` `` |
+| `reauthentication` | `` `Kode verifikasi \{shortName\}` `` |
+
+Source: `send-auth-email.tsx` — the `switch` that picks `subject` per action type.
+
+### English Equivalents (If You Translate)
+
+| Action | English Subject |
+|---|---|
+| `signup` | `` `Sign in to \{shortName\}` `` |
+| `magiclink` | `` `Your sign-in link for \{shortName\}` `` |
+| `recovery` | `` `Reset your \{shortName\} password` `` |
+| `invite` | `` `You're invited to \{shortName\}` `` |
+| `email_change` | `` `Confirm your \{shortName\} email change` `` |
+| `reauthentication` | `` `Your \{shortName\} verification code` `` |
+
+To use these, replace the corresponding strings in the `switch` block.
+
+## Shared Layout — `_layout.tsx`
+
+Every template is wrapped in a shared layout:
+
+```tsx
+<EmailLayout preview="...">
+  {children}
+</EmailLayout>
+```
+
+The layout renders:
+
+- **Header** — brand name (text-based, no external image load for deliverability)
+- **Body** — template-specific content
+- **Footer** — a generic disclaimer, **currently in Indonesian:** "Email ini dikirim otomatis oleh \{brandName\}..."
+
+Brand values come from `brandingConfig` — so `name` and `theme.primaryColor` auto-update with env changes, but the surrounding copy stays Indonesian until translated.
+
+### Why Text Brand, Not Logo Image?
+
+Email clients often block external images by default (Gmail, Outlook). A text-based header is guaranteed to appear. If you want a logo image:
+
+1. Host the image on a CDN (Supabase Storage, Vercel Blob, etc.)
+2. Edit `_layout.tsx`, replace the text with `<Img src={logoUrl} width={120} />`
+3. Serve the logo with a `.png` extension — email clients are more permissive
+
+## Customizing a Template
+
+### Example: Change Tone
+
+`src/shared/email/templates/magic-link.tsx` — default Indonesian copy looks roughly like:
+
+```tsx
+<Text>Hai {userName},</Text>
+<Text>Kamu meminta tautan masuk untuk {brandName}. Klik tombol di bawah untuk melanjutkan.</Text>
+<PrimaryButton href={magicUrl}>Masuk ke {shortName}</PrimaryButton>
+```
+
+Translated English equivalent:
+
+```tsx
+<Text>Hi {userName},</Text>
+<Text>You requested a sign-in link for {brandName}. Click the button below to continue:</Text>
+<PrimaryButton href={magicUrl}>Sign in to {shortName}</PrimaryButton>
+<Text>This link expires in 1 hour. If you didn't request it, ignore this email.</Text>
+```
+
+Edit text or add new elements. React Email docs: [react.email/docs](https://react.email/docs).
+
+### Add a New Element
+
+```tsx
+import { Text, Hr, Section } from "@react-email/components";
+import { PrimaryButton } from "./_layout";
+
+<Section>
+  <Text>Main content...</Text>
+  <PrimaryButton href={verifyUrl}>Verify</PrimaryButton>
+  <Hr />
+  <Text>Need help? Reply to this email or contact support.</Text>
+</Section>
+```
+
+### Inline Styles Only
+
+Email clients **don't** support CSS classes or external stylesheets. The layout uses a small subset of Tailwind via `@react-email/tailwind`, which inlines styles at render time. For custom values, use JS style objects:
+
+```tsx
+const paragraph = {
+  color: "#374151",
+  fontSize: "16px",
+  lineHeight: "24px",
+};
+
+<Text style={paragraph}>...</Text>
+```
+
+### Brand Variables
+
+Templates auto-read from `brandingConfig`:
+
+```tsx
+import { brandingConfig } from "@/config";
+
+const primaryColor = brandingConfig.theme.primaryColor;
+const brandName = brandingConfig.name;
+```
+
+Change the env `NEXT_PUBLIC_APP_PRIMARY_COLOR` + redeploy → email color auto-updates.
+
+## Preview Templates During Development
+
+React Email has a dev server with hot reload:
+
+```bash
+# Install react-email CLI if you don't have it
+pnpm add -D react-email
+
+# Run preview
+npx react-email dev --dir src/shared/email/templates
+```
+
+Open the URL shown in the browser (usually `http://localhost:3001`). Templates auto-reload when you edit.
+
+> ⚠️ **Not wired as an npm script.** Add it yourself if you need it:
+> ```json
+> {
+>   "scripts": {
+>     "email:dev": "email dev --dir src/shared/email/templates"
+>   }
+> }
+> ```
+> Then run: `pnpm email:dev`.
+
+## Internationalization (Hard-coded) \{#internationalization-hardcoded\}
+
+**Current limitation:** subjects + body copy are hardcoded Indonesian.
+
+Changing `NEXT_PUBLIC_APP_LANG` or `appConfig.locale.default` **does not** translate email content.
+
+### Workaround 1: Edit Templates Manually (Simplest)
+
+If your target audience speaks one specific language (e.g. English), edit the 5 templates + the `getSubject()` switch in `send-auth-email.tsx` directly. Replace the copy. One-time effort, fits most SaaS apps that ship to a single market.
+
+### Workaround 2: Conditional per Locale
+
+Extend templates with a `locale` prop:
+
+```tsx
+// Pseudo-code — not implemented in the default boilerplate
+const messages = {
+  id: { greeting: "Halo!", cta: "Masuk" },
+  en: { greeting: "Hello!", cta: "Sign in" },
+};
+
+const t = messages[locale];
+
+<Text>{t.greeting}</Text>
+<PrimaryButton>{t.cta}</PrimaryButton>
+```
+
+Then in the dispatcher, detect the locale from:
+
+- `user.user_metadata.locale` (if set at registration)
+- Fallback to `appConfig.locale.default`
+
+### Workaround 3: Integrate Boilerplate i18n
+
+Use the `t()` function from `src/core/i18n/`:
+
+```tsx
+import { getTranslation } from "@/core/i18n";
+
+const t = getTranslation(locale);
+
+<Text>{t("emails.magicLink.greeting")}</Text>
+```
+
+You'd need to add keys in `src/core/i18n/locales/id.json` + `en.json`.
+
+**The default boilerplate doesn't implement any of this** — complexity vs. scope trade-off. Implement in your fork if you need it.
+
+## Testing
+
+### Test Pure Template Rendering
+
+Create an ad-hoc test page:
+
+```tsx
+// src/app/dev/email-preview/page.tsx
+import { MagicLinkEmail } from "@/shared/email/templates/magic-link";
+
+export default function Page() {
+  return (
+    <MagicLinkEmail
+      magicUrl="https://example.com/verify?token=xxx"
+      token="123456"
+      userName="Test User"
+      isNewUser={false}
+    />
+  );
+}
+```
+
+Open `http://localhost:3000/dev/email-preview`. Rendered directly in the browser (plain DOM). Fast to iterate on design.
+
+> Delete the dev page before deploying to production (or guard with a `NODE_ENV === "development"` check).
+
+### Test HMAC + Full Flow
+
+```bash
+# Trigger forgot password
+curl -X POST http://localhost:3000/forgot-password \
+  -d 'email=test@example.com'
+```
+
+Or use the UI at `/forgot-password`. Check Resend Dashboard → Emails → latest entry → **Preview** to see rendered HTML.
+
+## Common Customizations
+
+### Add a Hosted Logo Image
+
+1. Upload the logo to Supabase Storage or Vercel Blob (use the full CDN URL)
+2. Edit `_layout.tsx`:
+
+```tsx
+import { Img } from "@react-email/components";
+
+<Img
+  src="https://cdn.your-domain.com/logo.png"
+  alt="Brand Logo"
+  width={120}
+  style={{ margin: "0 auto", display: "block" }}
+/>
+```
+
+### Add Social Links in the Footer
+
+```tsx
+<Section>
+  <Text>
+    <Link href="https://twitter.com/yourbrand">Twitter</Link>
+    {" · "}
+    <Link href="https://yourbrand.com">Website</Link>
+    {" · "}
+    <Link href="mailto:support@yourbrand.com">Support</Link>
+  </Text>
+</Section>
+```
+
+### Dark Mode
+
+Email client dark mode support is limited. Strategy:
+
+- Gmail (mobile) — auto-inverts dark → light colors, can break design
+- Apple Mail — respects `prefers-color-scheme` in inline styles
+
+Limited — test in multiple clients (Litmus, Email on Acid) if it matters for production.
+
+## Reference
+
+- [React Email docs](https://react.email/docs)
+- [React Email components](https://react.email/docs/components/html)
+- [Email client CSS support](https://www.caniemail.com/)
+- [Supabase hook docs](https://supabase.com/docs/guides/auth/auth-hooks/send-email-hook)

@@ -1,0 +1,475 @@
+---
+title: Activity Logging
+description: Append-only audit trail — single source of truth via the `ActivityAction` registry
+---
+
+The boilerplate ships built-in activity logging for auditing user actions. Simple, append-only, with a central object that prevents fragmentation.
+
+## Table
+
+```sql
+CREATE TABLE activity_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  action text NOT NULL,
+  resource_type text,
+  resource_id text,
+  metadata jsonb,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX idx_activity_logs_user_id ON activity_logs(user_id);
+CREATE INDEX idx_activity_logs_action ON activity_logs(action);
+CREATE INDEX idx_activity_logs_created_at ON activity_logs(created_at DESC);
+```
+
+### Append-Only
+
+**Never UPDATE or DELETE a row in `activity_logs`.** Mutations destroy audit integrity.
+
+If a row is wrong, insert a **correction entry** instead (with `action = "log.correction"` plus metadata referencing the original row). The original row stays.
+
+### RLS Policy
+
+```sql
+-- Users only see their own logs
+CREATE POLICY "activity_self_select"
+  ON activity_logs FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Admins see everything
+CREATE POLICY "activity_admin_select_all"
+  ON activity_logs FOR SELECT
+  USING (public.is_admin(auth.uid()));
+
+-- Insert only for authenticated sessions
+CREATE POLICY "activity_insert"
+  ON activity_logs FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+```
+
+## ActivityAction — SINGLE SOURCE OF TRUTH
+
+⚠️ **The most important rule:**
+
+All `action` strings are defined in one place — `src/core/auth/services/activity.service.ts`:
+
+```ts
+export const ActivityAction = {
+  // User lifecycle (authenticated events only — anon handled by Supabase audit)
+  UserLogin: "user.login",
+  UserLogout: "user.logout",
+  UserSignup: "user.signup",
+  UserPasswordResetCompleted: "user.password_reset_completed",
+
+  // Profile
+  ProfileUpdate: "profile.update",
+  ProfileAvatarUpload: "profile.avatar_upload",
+
+  // Admin
+  AdminUserCreate: "admin.user.create",
+  AdminUserDeactivate: "admin.user.deactivate",
+  AdminUserActivate: "admin.user.activate",
+  AdminUserRoleChange: "admin.user.role_change",
+  AdminUserDelete: "admin.user.delete",
+
+  // Commerce — credentials
+  CommerceCredentialConnected: "commerce.credential.connected",
+  CommerceCredentialDisconnected: "commerce.credential.disconnected",
+
+  // Commerce — webhooks
+  CommerceWebhookProvisioned: "commerce.webhook.provisioned",
+  CommerceWebhookDeleted: "commerce.webhook.deleted",
+
+  // Commerce — subscription actions
+  CommerceSubscriptionPaused: "commerce.subscription.paused",
+  CommerceSubscriptionResumed: "commerce.subscription.resumed",
+  CommerceSubscriptionCancelled: "commerce.subscription.cancelled",
+
+  // Commerce — checkout
+  CommerceCheckoutCreated: "commerce.checkout.created",
+
+  // Commerce — order sync
+  CommerceOrderSynced: "commerce.order.synced",
+} as const;
+
+export type ActivityActionKey = (typeof ActivityAction)[keyof typeof ActivityAction];
+```
+
+### Rules
+
+1. **Every action string must live in the `ActivityAction` registry.** Don't create ad-hoc string literals (e.g. `action: "my.custom.event"` inside a module) — that defeats the central source of truth.
+
+2. **Modules may add entries**, but prefix them with the module name and use dot-separated format:
+
+   ```ts
+   // Inside the ActivityAction object
+   BlogPostCreated: "blog.post.created",
+   BlogPostPublished: "blog.post.published",
+   ```
+
+3. **Format: `<domain>.<action>` in dot-separated lowercase.** `user.login`, not `login`, not `UserLogin`, not `loggedIn`. Multi-word action segments also use dot separators (e.g. `admin.user.role_change`).
+
+4. **Convention for key naming in the registry:** PascalCase identifiers → dot-separated string values. TypeScript key is `UserLogin`; stored string value is `"user.login"`.
+
+5. **Don't duplicate the registry inside a module** — import from `@/core/auth/services`:
+
+   ```ts
+   import { ActivityAction } from "@/core/auth/services";
+
+   await logActivity(supabase, {
+     action: ActivityAction.CommerceOrderSynced,
+     // ...
+   });
+   ```
+
+### ⚠️ Known issue: parallel enum in commerce module
+
+The current codebase has a **parallel, LEGACY enum** at `src/modules/commerce/services/activity.service.ts`. This isn't just a name duplication — **the values are DIFFERENT** between the two enums:
+
+| Event | Core (`@/core/auth/services`) | Commerce (legacy) |
+|---|---|---|
+| User login | `"user.login"` | `"user.logged_in"` |
+| User signup | `"user.signup"` | `"user.registered"` |
+| User logout | `"user.logout"` | `"user.logged_out"` |
+| Credential saved | `"commerce.credential.connected"` | `"commerce.credential.saved"` |
+
+**Why this matters:** if different callers import from different files, your `activity_logs` table will accumulate rows with **inconsistent action strings for the same semantic event**. Querying `WHERE action = 'user.login'` will miss rows logged as `'user.logged_in'`, and vice-versa.
+
+**What to do:**
+
+- **Always** import from `@/core/auth/services` (or `@/core/auth` barrel), never from the commerce-local file.
+- **Recommended**: delete `src/modules/commerce/services/activity.service.ts` and replace with a re-export from core. This is a one-file cleanup that eliminates the risk permanently.
+
+## `logActivity()` Helper
+
+A single function for logging:
+
+```ts
+import { logActivity, ActivityAction } from "@/core/auth/services";
+import { createClient } from "@/core/lib/supabase/server";
+
+await logActivity(supabase, {
+  userId,                                    // optional — FK to auth.users
+  action: ActivityAction.UserLogin,
+  resourceType: "user",                      // optional
+  resourceId: userId,                        // optional
+  metadata: {                                // optional, jsonb
+    provider: "google",
+    sessionId: "xxx",
+  },
+  ipAddress: ip,                             // optional, auto-captured from request
+  userAgent: ua,                             // optional
+});
+```
+
+### Signature
+
+```ts
+export interface LogActivityInput {
+  /** Dot-notation action key, e.g. "user.login", "admin.user.deactivate". */
+  action: string;
+  /** Optional — override current user (useful for admin actions on behalf). */
+  userId?: string | null;
+  /** Optional resource type: "user", "order", "post", etc. */
+  resourceType?: string | null;
+  /** Optional resource identifier. */
+  resourceId?: string | null;
+  /** Free-form context. Keep small; for full payload use separate storage. */
+  metadata?: Record<string, unknown>;
+  /** Request IP — available on server only (from headers). */
+  ipAddress?: string | null;
+  /** Request UA — available on server only. */
+  userAgent?: string | null;
+}
+
+export interface LogActivityResult {
+  logged: boolean;
+  id: string | null;
+  error: Error | null;
+}
+
+function logActivity(
+  supabase: SupabaseClient,
+  input: LogActivityInput
+): Promise<LogActivityResult>;
+```
+
+### Error Handling
+
+`logActivity()` **does not throw**. It returns `{ logged, id, error }` for the caller to inspect. Activity logging **must never break the main flow** — e.g. if a user logs in successfully but the log insert fails, the user is still logged in and the failure is merely a `console.warn` in dev mode.
+
+Implementation is in `src/core/auth/services/activity.service.ts`.
+
+### Resolving `userId`
+
+If `userId` is omitted from the input, `logActivity()` resolves it automatically via `supabase.auth.getSession()`. Pass `userId` explicitly only when:
+
+- Logging on behalf of another user (admin action)
+- Using a service-role client where there's no session
+
+## Where It's Used
+
+The boilerplate auto-logs these actions:
+
+| Trigger | Action |
+|---|---|
+| User login success (email/password, magic link, OAuth) | `user.login` |
+| User logout | `user.logout` |
+| User registration (with or without verification) | `user.signup` |
+| User completes password reset | `user.password_reset_completed` |
+| User connects LS credential | `commerce.credential.connected` |
+| User disconnects LS credential | `commerce.credential.disconnected` |
+| User provisions webhook config | `commerce.webhook.provisioned` |
+| User deletes webhook config | `commerce.webhook.deleted` |
+| User creates a checkout link | `commerce.checkout.created` |
+| User pauses a subscription | `commerce.subscription.paused` |
+| User resumes a subscription | `commerce.subscription.resumed` |
+| User cancels a subscription | `commerce.subscription.cancelled` |
+
+Check the implementations in:
+
+- `src/app/api/auth/callback/route.ts`
+- `src/app/api/auth/confirm/route.ts`
+- `src/core/auth/components/providers/email-password-form.tsx`
+- `src/core/auth/components/providers/email-password-register-form.tsx`
+- `src/core/auth/store/auth-store.ts` (logout)
+- `src/app/api/commerce/credentials/route.ts`
+- `src/app/api/commerce/webhooks/config/route.ts`
+- `src/app/api/commerce/checkout/route.ts`
+- `src/app/api/commerce/subscriptions/\[id\]/route.ts`
+
+## Query Patterns
+
+### Recent Activity for the Current User
+
+```ts
+const { data: logs } = await supabase
+  .from("activity_logs")
+  .select("*")
+  .order("created_at", { ascending: false })
+  .limit(50);
+```
+
+RLS automatically filters by `user_id = auth.uid()`.
+
+### Using `listActivity()` Helper
+
+The core service also exposes a `listActivity()` function for common query patterns:
+
+```ts
+import { listActivity } from "@/core/auth/services";
+
+const { rows, count, error } = await listActivity(supabase, {
+  userId: user.id,
+  action: "user.login",
+  limit: 50,
+  offset: 0,
+  from: new Date("2026-04-01"),
+  to: new Date("2026-04-30"),
+});
+```
+
+### Admin: Search All Activity
+
+```ts
+// Admin only — RLS admin policy permits this
+const { data } = await supabase
+  .from("activity_logs")
+  .select("*, user:user_profiles(full_name, email)")
+  .eq("action", "user.login")
+  .gte("created_at", "2026-04-01")
+  .order("created_at", { ascending: false });
+```
+
+### Count by Action (Aggregate)
+
+```sql
+SELECT action, count(*) as total
+FROM activity_logs
+WHERE created_at > NOW() - INTERVAL '7 days'
+GROUP BY action
+ORDER BY total DESC;
+```
+
+Run this via the Supabase SQL Editor, or expose it through an RPC function.
+
+## Activity Feed UI
+
+Custom feed on a profile / settings page:
+
+```tsx
+"use client";
+
+import { useEffect, useState } from "react";
+import { createClient } from "@/core/lib/supabase/client";
+import type { ActivityLog } from "@/core/types";
+
+export function ActivityFeed() {
+  const [logs, setLogs] = useState<ActivityLog[] | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("activity_logs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50)
+      .then(({ data }) => setLogs(data ?? []));
+  }, []);
+
+  if (!logs) return <p>Loading…</p>;
+  if (logs.length === 0) return <p>No activity yet.</p>;
+
+  return (
+    <ul>
+      {logs.map((log) => (
+        <li key={log.id}>
+          <strong>{formatAction(log.action)}</strong>
+          <time>{new Date(log.created_at).toLocaleString()}</time>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Format the action label with a helper:
+
+```ts
+function formatAction(action: string): string {
+  // user.login → "Logged in"
+  // commerce.order.synced → "Order synced"
+  return action
+    .split(".").slice(1).join(" ")   // strip domain
+    .replace(/_/g, " ")               // underscores to spaces
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+```
+
+Or use i18n:
+
+```json
+{
+  "activity": {
+    "user.login": "Logged in",
+    "user.logout": "Logged out",
+    "commerce.order.synced": "Order synced"
+  }
+}
+```
+
+```tsx
+{t(`activity.{log.action}`)}
+```
+
+## Retention
+
+Default: infinite (no auto-delete). In production, consider a cron job:
+
+```sql
+-- Delete logs older than 1 year
+DELETE FROM activity_logs
+WHERE created_at < NOW() - INTERVAL '1 year';
+```
+
+Schedule via:
+
+- Supabase Edge Function + pg_cron
+- External scheduler (cron-job.org, GitHub Actions)
+
+Trade-off: deleting old data is compliance-friendly (GDPR minimization) but you lose historical context.
+
+## Sensitive Data — Don't Log It
+
+**Don't** put sensitive info into `metadata`:
+
+- Password (plaintext)
+- Session tokens
+- API keys
+- Credit cards
+- Personal data (national ID, SSN, etc.)
+
+If you absolutely must reference it:
+
+- Hash (SHA-256) if you need audit matching
+- Mask (e.g. `card_****1234`)
+
+Remember: `activity_logs` is readable via RLS by users and admins. Once data is in there, it's hard to scrub (append-only).
+
+## Extending
+
+### Logging in Custom Flows
+
+In a new module, import the helper:
+
+```ts
+import { logActivity, ActivityAction } from "@/core/auth/services";
+
+export async function publishPost(supabase, postId, userId) {
+  // ... actual publish logic ...
+
+  // Log
+  await logActivity(supabase, {
+    userId,
+    action: "blog.post.published",   // add the key to the registry first
+    resourceType: "blog_post",
+    resourceId: postId,
+  });
+}
+```
+
+### Trigger-Based Logging (Advanced)
+
+For automatic logging without explicit calls (e.g. every UPDATE on `user_profiles`), use a Postgres trigger:
+
+```sql
+CREATE OR REPLACE FUNCTION log_profile_update()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO activity_logs (user_id, action, resource_type, resource_id)
+  VALUES (NEW.id, 'profile.update', 'user_profile', NEW.id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER profile_update_audit
+  AFTER UPDATE ON user_profiles
+  FOR EACH ROW EXECUTE FUNCTION log_profile_update();
+```
+
+Trade-off: automatic but opaque (you can't tell whether a change came from a trigger or explicit code). A hybrid approach — explicit calls in app logic, triggers as a backup audit — often works best.
+
+## Troubleshoot
+
+### Log Insert Silently Fails
+
+- `logActivity` returns `{ logged: false, error }` — inspect the error
+- RLS policy blocks — check that `user_id` matches `auth.uid()`
+- `user_id` points to a deleted auth user → FK `ON DELETE SET NULL` handles this, but investigate why
+
+### UI Activity Doesn't Update in Realtime
+
+- Use a Supabase realtime subscription:
+
+  ```ts
+  supabase
+    .channel("activity")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "activity_logs" },
+      callback
+    )
+    .subscribe();
+  ```
+
+- The boilerplate doesn't implement realtime by default — add it if you need it
+
+### Duplicate Logs (one action appears twice)
+
+- The caller invokes `logActivity()` twice (double-execute in useEffect without a dep array)
+- Async race (check React 19 Strict Mode double-render in dev)
+
+Fix: wrap the logic in `useEffect` with proper dependencies, or use an abort flag.

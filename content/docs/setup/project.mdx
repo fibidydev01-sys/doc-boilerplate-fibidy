@@ -1,0 +1,235 @@
+---
+title: Project Setup
+description: Clone, install, configure env, run on localhost
+---
+
+Assumes: Supabase + Resend are already set up. If not, go back to [Supabase Setup](/docs/setup/supabase) and [Resend Setup](/docs/setup/resend) first.
+
+Target: app running at `http://localhost:3000` in 10 minutes.
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/<YOUR_USERNAME>/<YOUR_REPO>.git
+cd <YOUR_REPO>
+```
+
+## 2. Install Dependencies
+
+```bash
+pnpm install
+```
+
+Wait ~1-2 minutes. Peer dependency warnings about React 19 are safe to ignore as long as there are no errors.
+
+## 3. Generate `ENCRYPTION_KEY`
+
+The boilerplate needs an AES-256-GCM key to encrypt Lemon Squeezy API keys & webhook secrets in the database.
+
+Generate via Node crypto:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Example output:
+```
+GJ4p8QzN5xK2mH9vL3sW7yT1bE6dA0cF+RiU8oZpVnM=
+```
+
+Copy this value — you'll use it in step 4.
+
+### ⚠️ Critical Rules
+
+1. **The value must be exactly 32 bytes** after base64 decoding. Generate using the command above — don't make up a random string.
+
+2. **The value is the SAME across every environment** (dev / staging / prod) that shares a database. Different keys = encrypted data can't decrypt across envs.
+
+3. **Back up to a password manager** (1Password, Bitwarden, AWS Secrets Manager, etc.). **Losing the key = losing all encrypted data**, no recovery.
+
+4. **Rotation = re-encrypt all data.** Heavy operation, write a migration script if you really need to rotate.
+
+## 4. Configure `.env.local`
+
+Copy the template:
+
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local`, fill in values from the previous steps:
+
+```bash
+# =====================================================================
+# SUPABASE (REQUIRED)
+# From: Supabase Dashboard → Project Settings → Data API
+# =====================================================================
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...
+
+# =====================================================================
+# ENCRYPTION (REQUIRED)
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# =====================================================================
+ENCRYPTION_KEY=GJ4p8QzN5xK2mH9vL3sW7yT1bE6dA0cF+RiU8oZpVnM=
+
+# =====================================================================
+# RESEND (REQUIRED for auth email)
+# From: resend.com/api-keys (needs a verified domain)
+# =====================================================================
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+RESEND_FROM_EMAIL="My App <noreply@yourdomain.com>"
+
+# =====================================================================
+# SUPABASE AUTH HOOK (REQUIRED once the hook is registered)
+# From: Supabase Dashboard → Auth → Hooks → Send Email Hook
+# EXACT format: v1,whsec_xxxxxxxxxx (include the "v1," prefix)
+#
+# Canonical name. Legacy alias SEND_EMAIL_HOOK_SECRET is still accepted
+# by verify-webhook.ts as a fallback, but use SUPABASE_AUTH_HOOK_SECRET
+# in new deployments to match Supabase dashboard terminology.
+# =====================================================================
+SUPABASE_AUTH_HOOK_SECRET=v1,whsec_xxxxxxxxxxxxx
+
+# =====================================================================
+# APP URL (Production required, local optional)
+# =====================================================================
+# NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# =====================================================================
+# BRANDING (All optional, defaults exist)
+# =====================================================================
+NEXT_PUBLIC_APP_NAME="My App"
+NEXT_PUBLIC_APP_SHORT_NAME="App"
+NEXT_PUBLIC_APP_DESCRIPTION="A modern web application"
+NEXT_PUBLIC_APP_TAGLINE="Welcome"
+NEXT_PUBLIC_APP_KEYWORDS="app,web,platform"
+NEXT_PUBLIC_APP_AUTHOR=""
+NEXT_PUBLIC_APP_PRIMARY_COLOR="#16a34a"
+NEXT_PUBLIC_APP_BG_COLOR="#ffffff"
+NEXT_PUBLIC_APP_CATEGORY="productivity"
+NEXT_PUBLIC_APP_LANG="en-US"
+```
+
+### Note on `SUPABASE_AUTH_HOOK_SECRET` in Local Dev
+
+If you **haven't set up the hook** (because you don't have a public URL or haven't set up ngrok), **it's OK to leave this empty for now**. Effects:
+
+- The `/api/auth/hooks/send-email` endpoint will reject all requests with `server_misconfigured`
+- Auth emails still work but fall back to Supabase default SMTP (strict limits, basic template, poor deliverability)
+- Email+password login works fine regardless
+
+Set up the hook after you deploy or use [ngrok](/docs/email/setup#option-b-dev-testing-with-ngrok).
+
+### Verify `.env.local` Is Safe
+
+```bash
+git check-ignore .env.local
+```
+
+Output **`.env.local`** = safe (file is ignored).
+Empty output = `.env.local` will be committed — check your `.gitignore`.
+
+Details on each env var in [Environment Variables](/docs/environment-variables).
+
+## 5. Set Up Branding Assets
+
+Replace the files in `public/branding/`:
+
+- `icon-48.png`, `icon-72.png`, `icon-96.png`, `icon-144.png`, `icon-192.png`, `icon-512.png` — PWA icons
+- `favicon.ico` — 32×32 px, browser tab icon
+- `apple-touch-icon.png` — 180×180 px, iOS homescreen
+
+Generate all at once from a single high-res image:
+- [realfavicongenerator.net](https://realfavicongenerator.net) — recommended, generates every size at once
+- [favicon.io](https://favicon.io) — simpler alternative
+
+## 6. Run the Dev Server
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+**What should happen:**
+
+- Anonymous users → auto-redirect to `/login`
+- Login page shows with your brand name + logo from `.env.local` + `public/branding/`
+
+## 7. Smoke Test
+
+### Basic Auth
+
+| Test | Expected |
+|---|---|
+| Open `/login` | Login page shows your branding |
+| Sign up a new user (if `allowPublicSignup: true`) | User created, redirect to dashboard |
+| Log in as admin (from Supabase setup step 7) | Redirect to `/admin` |
+| Log in as a regular user | Redirect to `/dashboard` |
+| Logout | Redirect to `/login`, session cleared |
+
+### Auth Email (if the hook is registered)
+
+| Test | Expected |
+|---|---|
+| Click **Forgot password** → submit email | Email arrives within < 10 seconds |
+| Click the email link | Lands at `/reset-password` with token |
+| Submit a new password | Password updated, able to log in |
+| Submit the **Magic Link** form | Email arrives, click → auto-login |
+
+If email doesn't arrive, check:
+1. Resend Dashboard → **Emails** — any entry? Delivered status?
+2. Supabase Dashboard → **Authentication** → **Hooks** → Recent invocations — response 2xx?
+3. Vercel Logs or the `pnpm dev` terminal — any errors at `/api/auth/hooks/send-email`?
+
+## 8. Common Issues
+
+### `NEXT_PUBLIC_SUPABASE_URL is not defined`
+
+Env var didn't load.
+
+- The file is named **`.env.local`** (not `.env`, not `env.local`)
+- Located at the project root (next to `package.json`)
+- Restart the dev server after editing (Next.js caches env at startup, loaded once)
+
+### Login Succeeds but Redirects Back to `/login`
+
+Redirect URL mismatch.
+
+- Supabase Dashboard → **Authentication** → **URL Configuration** — make sure **Redirect URLs** includes `http://localhost:3000/api/auth/callback`
+- Hard refresh the browser (`Ctrl+Shift+R`)
+- Clear cookies for `localhost:3000`
+
+### `ENCRYPTION_KEY env var not set`
+
+You skipped step 3. Generate the key and set it in `.env.local`. Restart the dev server.
+
+### Commerce Page Error 500
+
+One of:
+- `ENCRYPTION_KEY` isn't set
+- `SUPABASE_SERVICE_ROLE_KEY` isn't set
+- You hit a commerce endpoint without connecting LS (normal — connect first via UI at `/settings/integrations`)
+
+### Emails Don't Arrive
+
+See [Troubleshooting → Email](/docs/troubleshooting#emails-still-not-arriving).
+
+## 🎉 Ready!
+
+If the smoke test passes, you're ready to continue. Pick a path:
+
+**Explore the Codebase:**
+- [Project Structure](/docs/working-with-the-codebase/project-structure) — folder map
+- [Architecture Overview](/docs/architecture/overview) — 4-layer design
+
+**Enable Features:**
+- [Authentication Overview](/docs/authentication/overview) — understand the auth flow
+- [Commerce Setup](/docs/commerce/setup) — connect Lemon Squeezy
+- [Email Setup](/docs/email/setup) — wire up Send Email Hook (if you haven't)
+
+**Deploy:**
+- [Vercel Deployment](/docs/deployment/vercel) — go live
+- [Pre-Launch Checklist](/docs/deployment/checklist) — verify before production

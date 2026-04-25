@@ -1,0 +1,354 @@
+---
+title: Self-Hosted
+description: Deploy to Docker, Railway, Render, Fly.io, or Cloud Run
+---
+
+Vercel is the default, but this boilerplate is standard Next.js — deployable to any platform that supports the Node.js runtime.
+
+## When to Choose Self-Hosted?
+
+Reasons to move away from Vercel:
+
+- **Cost at scale** — Vercel bandwidth / function invocations get expensive at high traffic
+- **Region control** — Vercel Edge Functions are great, but full regional control needs alternatives
+- **Data sovereignty** — some regions require local data centers (Indonesia, Germany, China)
+- **Vendor lock-in concerns** — platform-agnostic as insurance
+- **Custom runtime needs** — native Node modules, GPU, long-running processes
+
+Trade-off: self-hosted requires maintenance effort (updates, SSL renewal, scaling). Vercel zero-config covers almost every case — only move when you truly need it.
+
+## Platform Options
+
+| Platform | Complexity | Best for |
+|---|---|---|
+| **Railway** | Low | Small team, Vercel-like UX without Vercel |
+| **Render** | Low | Long-running background jobs |
+| **Fly.io** | Medium | Multi-region deployment |
+| **Google Cloud Run** | Medium | Serverless container, scale-to-zero |
+| **AWS ECS / Fargate** | High | Deep AWS integration |
+| **Docker (self-managed VPS)** | High | Full control, lowest cost |
+
+## Common Setup
+
+### Build
+
+Boilerplate build command (all platforms):
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Output: `.next/` folder (standalone or default mode).
+
+### Start
+
+```bash
+pnpm start
+# or explicitly:
+node_modules/.bin/next start -p ${PORT:-3000}
+```
+
+### Env Vars
+
+Platform-specific settings, but the concept is the same:
+
+- Set every env var (see [Environment Variables](/docs/environment-variables))
+- Sensitive vars → platform secret manager (not plaintext config)
+
+## Railway
+
+1. [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**
+2. Pick the repo
+3. Railway auto-detects Next.js
+4. **Variables** tab — add env vars
+5. **Settings** → **Networking** → generate a domain or add a custom domain
+6. Deploy — auto-triggered on push to main
+
+Cost: free tier $5 credit/month, then usage-based.
+
+## Render
+
+1. [render.com](https://render.com) → **New** → **Web Service**
+2. Connect the GitHub repo
+3. Config:
+   - **Environment**: Node
+   - **Build Command**: `pnpm install --frozen-lockfile && pnpm build`
+   - **Start Command**: `pnpm start`
+4. **Environment Variables** — add everything
+5. **Advanced** → **Auto-Deploy** on push (default on)
+6. Deploy
+
+Cost: free tier with sleep after 15 minutes idle, or $7/month always-on.
+
+## Fly.io
+
+Supports multi-region deploy, needs the `flyctl` CLI:
+
+```bash
+curl -L https://fly.io/install.sh | sh
+
+flyctl auth login
+
+flyctl launch
+# → auto-detects Next.js, generates fly.toml + Dockerfile
+```
+
+Edit `fly.toml`:
+
+```toml
+app = "my-boilerplate"
+primary_region = "sin"  # Singapore
+
+[env]
+  NEXT_PUBLIC_APP_URL = "https://my-boilerplate.fly.dev"
+
+[[services]]
+  protocol = "tcp"
+  internal_port = 3000
+
+[[services.ports]]
+  port = 80
+  handlers = ["http"]
+[[services.ports]]
+  port = 443
+  handlers = ["tls", "http"]
+```
+
+Set secrets (non-public env):
+
+```bash
+flyctl secrets set SUPABASE_SERVICE_ROLE_KEY=xxx
+flyctl secrets set ENCRYPTION_KEY=xxx
+flyctl secrets set RESEND_API_KEY=xxx
+flyctl secrets set SEND_EMAIL_HOOK_SECRET=v1,whsec_xxx
+# ... etc.
+```
+
+Deploy:
+
+```bash
+flyctl deploy
+```
+
+Multi-region:
+
+```bash
+flyctl regions add nrt hkg lax
+flyctl scale count 3  # 1 instance per region
+```
+
+Cost: free tier limited, paid based on scale.
+
+## Google Cloud Run
+
+Serverless container, scale-to-zero.
+
+### Dockerfile
+
+Create a `Dockerfile` at the root:
+
+```dockerfile
+FROM node:20-alpine AS base
+
+# Install pnpm
+RUN corepack enable pnpm
+
+# Deps
+FROM base AS deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+# Build
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN pnpm build
+
+# Runner
+FROM base AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+EXPOSE 3000
+
+CMD ["node", "server.js"]
+```
+
+Edit `next.config.ts` to enable standalone output:
+
+```ts
+const nextConfig = {
+  output: "standalone",
+  // ...
+};
+```
+
+### Deploy
+
+```bash
+# Build + push image
+gcloud builds submit --tag gcr.io/PROJECT_ID/boilerplate
+
+# Deploy to Cloud Run
+gcloud run deploy boilerplate \
+  --image gcr.io/PROJECT_ID/boilerplate \
+  --platform managed \
+  --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars "NEXT_PUBLIC_SUPABASE_URL=xxx,..." \
+  --set-secrets "ENCRYPTION_KEY=encryption-key:latest,..."
+```
+
+Set secrets via Google Secret Manager (safer than plain env).
+
+Cost: 2M requests/month free, then $0.40/1M requests.
+
+## Self-Managed Docker (VPS)
+
+Full control, high maintenance. For DigitalOcean / Linode / Hetzner VPS.
+
+### 1. Dockerfile (same as Cloud Run)
+
+See above.
+
+### 2. docker-compose.yml
+
+```yaml
+version: "3.8"
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    volumes:
+      - ./public/branding:/app/public/branding
+```
+
+### 3. Reverse Proxy + SSL (nginx + Let's Encrypt)
+
+nginx `default.conf`:
+
+```nginx
+server {
+  listen 80;
+  server_name yourdomain.com;
+
+  location / {
+    proxy_pass http://localhost:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+SSL via certbot:
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d yourdomain.com
+```
+
+### 4. Deploy
+
+```bash
+# Pull updates
+git pull origin main
+
+# Rebuild + restart
+docker compose up -d --build
+
+# View logs
+docker compose logs -f app
+```
+
+### 5. Updates & Monitoring
+
+- systemd service for auto-restart on crash
+- Prometheus + Grafana if you want metrics
+- Log rotation (logrotate)
+- Firewall rules (ufw)
+- Regular package updates (`apt upgrade`)
+
+High overhead — worth it only if you're an experienced sysadmin or have an infra team.
+
+## Platform-Agnostic Considerations
+
+### Middleware Support
+
+`src/proxy.ts` (Next.js middleware) needs a runtime that supports Edge or Node.js. Most platforms support it — check the docs:
+
+- Vercel: ✓ Edge + Node
+- Railway: ✓ Node
+- Fly.io: ✓ Node
+- Cloud Run: ✓ Node
+- AWS Lambda: partial (strict middleware timeouts)
+
+### Cron Jobs
+
+If you used Vercel Cron, switching targets needs alternatives:
+
+- **Railway / Render** — built-in cron service
+- **Fly.io** — Fly Machines + schedule
+- **Cloud Run** — Google Cloud Scheduler → Pub/Sub → Cloud Run
+- **VPS** — native `crontab -e`
+
+### Regional Latency
+
+Supabase projects are regional → deploy the app in the same region for low latency:
+
+- Supabase SEA → Vercel `sin1`, Railway Singapore, Fly.io `sin`
+- Supabase US → Vercel `iad1` (Virginia), Railway / Render US East
+
+## Multi-Region Deploy
+
+For a global audience that's latency-sensitive:
+
+1. **Frontend** — Vercel / Cloudflare (built-in global CDN)
+2. **Backend / DB** — primary Supabase region + read replica (Supabase Enterprise plan)
+3. **Cache** — Cloudflare KV, Upstash Redis global
+
+The boilerplate defaults to single-region. Scale when you really need it.
+
+## Monitoring Self-Hosted
+
+Minimum stack:
+
+- **Logs** — platform native (Railway / Render / Fly.io have built-in)
+- **Uptime** — UptimeRobot / Better Uptime external
+- **Errors** — Sentry or similar
+- **Performance** — New Relic / Datadog (paid) or Grafana + Prometheus (self-hosted)
+
+## Cost Comparison (Estimated)
+
+Ballpark for the boilerplate at ~10k MAU:
+
+| Platform | Monthly Cost |
+|---|---|
+| Vercel Hobby | $0 (free, but hits limits at scale) |
+| Vercel Pro | $20/user |
+| Railway | $5-20 (usage-based) |
+| Render | $7-25 |
+| Fly.io | $5-15 |
+| Cloud Run | ~$5-30 (varies with traffic) |
+| VPS ($10/month Hetzner) | $10 fixed |
+
+Supabase cost is separate — free tier is fine up to ~50k MAU, then $25/month Pro plan.
+
+The optimal choice depends on growth trajectory + team size. **Vercel is the default that works up to scale.**

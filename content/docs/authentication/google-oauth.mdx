@@ -1,0 +1,206 @@
+---
+title: Google OAuth
+description: Set up Google Cloud Console + Supabase for "Sign in with Google"
+---
+
+## Status
+
+✅ **Fully implemented.** Requires a 2-step setup in Google Cloud Console + Supabase.
+
+## Flow Overview
+
+```
+User clicks "Sign in with Google"
+  ↓
+supabase.auth.signInWithOAuth({ provider: "google" })
+  ↓
+Browser redirects to accounts.google.com
+  ↓
+User approves
+  ↓
+Google callbacks to https://<PROJECT_REF>.supabase.co/auth/v1/callback
+  ↓
+Supabase exchanges code → session
+  ↓
+Supabase redirects to /api/auth/callback in your app (with `code` + `next`)
+  ↓
+The callback exchanges the code again (confirming the server-side session)
+  ↓
+Redirects by priority: returnTo → roleRedirects[role] → postLoginRedirect
+```
+
+## Step 1 — Google Cloud Console
+
+### Create a Project
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com)
+2. Click the project dropdown at the top → **New project**
+3. Name it, click **Create**
+
+### OAuth Consent Screen
+
+1. Sidebar → **APIs & Services** → **OAuth consent screen**
+2. **User Type**: **External** (unless you're in a Google Workspace)
+3. Fill in:
+   - **App name**: your app's name (will appear in the consent dialog)
+   - **User support email**: your email
+   - **Developer contact information**: your email
+4. **Save and Continue**
+5. **Scopes**: skip (defaults are sufficient)
+6. **Test users**: add your own email if you're still in testing mode. If the app is published, skip.
+7. **Save and Continue**
+
+### Create an OAuth Client ID
+
+1. Sidebar → **APIs & Services** → **Credentials**
+2. Click **+ Create Credentials** → **OAuth client ID**
+3. **Application type**: **Web application**
+4. **Name**: freeform (e.g. "Supabase Auth")
+5. **Authorized JavaScript origins** — add every URL:
+   ```
+   http://localhost:3000
+   https://your-production-domain.com
+   ```
+6. **Authorized redirect URIs** — add **ONLY the Supabase URL**:
+   ```
+   https://<YOUR_PROJECT_REF>.supabase.co/auth/v1/callback
+   ```
+   > ⚠️ **Not your app URL.** Supabase handles the callback first, then forwards to your app.
+7. **Create**
+8. A modal appears with **Client ID** and **Client Secret** — copy both.
+
+## Step 2 — Supabase
+
+1. Supabase Dashboard → **Authentication** → **Providers**
+2. Scroll to find **Google**
+3. Toggle **Enable** ✓
+4. Paste **Client ID** and **Client Secret**
+5. **Save**
+
+## Step 3 — Supabase Redirect URLs
+
+Required and often forgotten. Supabase Dashboard → **Authentication** → **URL Configuration**:
+
+- **Site URL**:
+  - Dev: `http://localhost:3000`
+  - Prod: `https://your-domain.com`
+- **Redirect URLs** (add all of these):
+  ```
+  http://localhost:3000/api/auth/callback
+  http://localhost:3000/api/auth/confirm
+  http://localhost:3000/**
+  https://your-domain.com/api/auth/callback
+  https://your-domain.com/api/auth/confirm
+  https://your-domain.com/**
+  https://*-your-vercel-username.vercel.app/**
+  ```
+
+The `/**` pattern is a wildcard allowing redirects to any path in the allowed domain. The `*-username.vercel.app` pattern is for Vercel preview deployments.
+
+## Step 4 — Enable in the App
+
+In `src/config/app.config.ts`:
+
+```ts
+auth: {
+  oauthProviders: ["google"] as const,
+  // ...
+}
+```
+
+Make sure `"google"` is in the array. The LoginForm and RegisterForm automatically render the OAuth button.
+
+## Test
+
+1. `pnpm dev`
+2. Open `/login`
+3. Click **Sign in with Google**
+4. Browser redirects to `accounts.google.com`
+5. Pick an account → approve
+6. Redirect back to the app
+7. On first login, the `handle_new_user()` trigger creates a row in `user_profiles` with role `user`
+8. Redirect to `/dashboard` (or `/admin` if admin)
+
+## Custom Consent Screen
+
+In Google Cloud Console → **APIs & Services** → **OAuth consent screen**:
+
+- **Application logo** — upload a square logo (minimum 120×120 px) for the consent dialog
+- **Application home page** — your app URL
+- **Application privacy policy** — REQUIRED to publish (you can still test without it using test users)
+- **Application terms of service** — REQUIRED to publish
+
+Click **Publish app** when ready so anyone can access it without needing to be on the test-user whitelist.
+
+## Callback Flow in the App
+
+Supabase redirects back to `/api/auth/callback` with query params:
+
+- `code` — the authorization code
+- `next` — the returnTo path (if set when initiating OAuth)
+
+`src/app/api/auth/callback/route.ts` handles this:
+
+```ts
+// Simplified
+const { data } = await supabase.auth.exchangeCodeForSession(code);
+
+const verification = await verifyProfile(supabase, data.session.user.id);
+
+if (!verification.exists) {
+  await supabase.auth.signOut();
+  return redirect("/login?error=account_not_registered");
+}
+
+if (!verification.isActive) {
+  await supabase.auth.signOut();
+  return redirect("/login?error=account_deactivated");
+}
+
+// Log activity (user.login)
+await logActivity(supabase, { action: "user.login", metadata: { provider: "google" } });
+
+// Role-aware redirect
+const dest = resolvePostLoginRedirect(verification.role, next);
+return redirect(dest);
+```
+
+With the `next` param, `returnTo` deep-links still work.
+
+## Error: `redirect_uri_mismatch`
+
+The most common issue. Fix:
+
+- **Google Console → Authorized redirect URIs** must include: `https://<PROJECT_REF>.supabase.co/auth/v1/callback`
+- **Don't** put your app URL there. This is the Supabase URL, not your app URL.
+- `PROJECT_REF` is in your Supabase URL (e.g. `xxxxxxxx` from `https://xxxxxxxx.supabase.co`)
+
+## Disable Google OAuth
+
+In `app.config.ts`, remove `"google"` from `oauthProviders`:
+
+```ts
+oauthProviders: [] as const,
+// or clear it to disable all OAuth
+```
+
+The Google button disappears from LoginForm automatically. You can disable the credentials in Supabase (you don't need to delete them).
+
+## Troubleshoot
+
+### Login succeeds, but redirects to `/login?error=account_not_registered`
+
+- The `handle_new_user()` trigger failed to create a row in `user_profiles`
+- Verify the trigger exists: Supabase Dashboard → Database → Triggers
+- Re-apply `setup.sql` if the trigger is missing
+
+### After clicking "Sign in with Google", a blank page appears
+
+- Popup blocker
+- Check the Network tab — did the OAuth request fail?
+- Check the console — any CORS errors?
+
+### Google API quota exceeded
+
+- Google OAuth has a soft limit on the free tier
+- Upgrade to a paid Google Cloud plan if you have high traffic

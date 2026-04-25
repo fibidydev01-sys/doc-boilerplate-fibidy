@@ -1,0 +1,369 @@
+---
+title: Monitoring
+description: "Extension point — guide to integrating error tracking and uptime monitoring"
+---
+
+> ⏳ **Extension Point — Not Included.**
+>
+> The boilerplate is FINAL at Phase 2 and **does not ship** external monitoring integrations. This page is reference documentation.
+>
+> What's already built in (no extras needed):
+> - **Vercel Logs** — function invocation logs, 24-hour retention on free tier
+> - **Supabase Logs** — query logs via the Dashboard
+> - **Resend Dashboard** — email delivery status
+
+## What Needs Monitoring?
+
+Three categories:
+
+### 1. Error Tracking
+
+- Unhandled exceptions on the server
+- Client-side JavaScript errors
+- Failed API calls (5xx)
+- Stack traces + user context + breadcrumbs
+
+**Tools:** Sentry, Rollbar, Bugsnag, Highlight
+
+### 2. Uptime Monitoring
+
+- Is the site reachable?
+- Response time
+- SSL certificate expiry
+- Alert channels (Slack, email, SMS)
+
+**Tools:** UptimeRobot, Better Uptime, Pingdom, Cronitor
+
+### 3. Performance / APM (Application Performance Monitoring)
+
+- Response time per endpoint
+- Database query latency
+- External API latency (LS, Resend)
+- Memory usage
+
+**Tools:** Datadog, New Relic, Grafana + Prometheus (self-hosted), Vercel Speed Insights
+
+## Minimum Recommendation
+
+If budget is tight, **pick at least two:**
+
+- **Sentry** — error tracking (free tier: 5k events/month)
+- **UptimeRobot** — uptime monitoring (free: 50 monitors)
+
+These cover 80% of critical monitoring needs. Add advanced tools when scale demands them.
+
+## Sentry Integration
+
+### Install
+
+```bash
+pnpm add @sentry/nextjs
+```
+
+### Init
+
+Run the wizard automatically:
+
+```bash
+npx @sentry/wizard@latest -i nextjs
+```
+
+Output:
+
+- `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`
+- Env vars added: `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`
+
+Or set it up manually:
+
+```ts
+// sentry.client.config.ts
+import * as Sentry from "@sentry/nextjs";
+
+Sentry.init({
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: 0.1,
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1.0,
+  environment: process.env.NODE_ENV,
+});
+```
+
+### User Context
+
+Set user identity after login:
+
+```tsx
+import * as Sentry from "@sentry/nextjs";
+
+// After successful login
+Sentry.setUser({
+  id: user.id,
+  email: user.email,  // optional, consider privacy
+});
+
+// On logout
+Sentry.setUser(null);
+```
+
+### Manual Error Capture
+
+```ts
+try {
+  await riskyOperation();
+} catch (error) {
+  Sentry.captureException(error, {
+    tags: { feature: "commerce" },
+    extra: { orderId: "xxx" },
+  });
+  throw error;  // re-throw so normal flow continues
+}
+```
+
+### Breadcrumb Context
+
+Auto-captured by the Sentry SDK:
+
+- Navigation
+- Fetch requests
+- Console logs
+- UI clicks (when replay is enabled)
+
+### Filter Noise
+
+```ts
+Sentry.init({
+  // ...
+  beforeSend(event, hint) {
+    const error = hint.originalException;
+
+    // Skip expected errors
+    if (error?.message?.includes("Unauthorized")) return null;
+
+    // Skip dev-mode errors
+    if (process.env.NODE_ENV === "development") return null;
+
+    return event;
+  },
+});
+```
+
+### Source Maps
+
+Upload source maps at build time so stack traces are readable:
+
+```ts
+// next.config.ts
+import { withSentryConfig } from "@sentry/nextjs";
+
+const nextConfig = {
+  // ...
+};
+
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  org: "your-org",
+  project: "your-project",
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+});
+```
+
+## UptimeRobot Setup
+
+### Add a Monitor
+
+1. Sign up at [uptimerobot.com](https://uptimerobot.com) — free 50 monitors
+2. **+ New Monitor**
+3. Config:
+   - **Type**: HTTP(s)
+   - **URL**: `https://yourdomain.com`
+   - **Interval**: 5 min (free tier) or 1 min (paid)
+4. **Alerts** — add email, Slack webhook, SMS
+
+### Health Check Endpoint
+
+A minimal endpoint response (not your homepage, which may be heavy to load):
+
+```ts
+// src/app/api/health/route.ts
+export async function GET() {
+  return Response.json({ status: "ok", ts: new Date().toISOString() });
+}
+```
+
+Point UptimeRobot at `/api/health`. Faster response time, minimal false positives.
+
+### Advanced Check
+
+Check more than reachability — verify the database and dependencies:
+
+```ts
+export async function GET() {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("user_profiles").select("id").limit(1);
+    if (error) throw error;
+
+    return Response.json({ status: "ok", db: "ok" });
+  } catch (e) {
+    return Response.json({ status: "error", error: (e as Error).message }, { status: 503 });
+  }
+}
+```
+
+UptimeRobot alerts on any non-200 response or timeout.
+
+> ⚠️ **Privacy:** don't expose sensitive info in the health endpoint (env var values, internal state). Attackers probe these endpoints to fingerprint your infrastructure.
+
+## Better Uptime (Alternative)
+
+[betteruptime.com](https://betterstack.com/better-uptime) — more free-tier features than UptimeRobot:
+
+- 10 monitors
+- 3-minute check interval
+- Public status page
+- On-call schedule
+
+Recommended if you need more features without paying.
+
+## Datadog / New Relic (Enterprise)
+
+If business-critical + you have budget:
+
+- **Datadog** — APM, logs, infrastructure, RUM (Real User Monitoring)
+- **New Relic** — similar, generous free tier (100 GB/month)
+
+Setup is more complex — integrate via an agent or SDK. Worth it when your team is 5+ engineers with a multi-service architecture.
+
+## Custom Logging
+
+Built-in Vercel / Supabase logs sometimes aren't enough. Structured logging pattern:
+
+```ts
+// src/core/lib/logger.ts
+interface LogEntry {
+  level: "info" | "warn" | "error";
+  message: string;
+  context?: Record<string, unknown>;
+  timestamp: string;
+}
+
+function log(entry: LogEntry) {
+  console.log(JSON.stringify(entry));
+
+  // Optional: send to an external service
+  if (entry.level === "error" && process.env.NODE_ENV === "production") {
+    Sentry.captureMessage(entry.message, {
+      level: entry.level,
+      extra: entry.context,
+    });
+  }
+}
+
+export const logger = {
+  info: (message: string, context?: Record<string, unknown>) =>
+    log({ level: "info", message, context, timestamp: new Date().toISOString() }),
+  warn: (message: string, context?: Record<string, unknown>) =>
+    log({ level: "warn", message, context, timestamp: new Date().toISOString() }),
+  error: (message: string, context?: Record<string, unknown>) =>
+    log({ level: "error", message, context, timestamp: new Date().toISOString() }),
+};
+```
+
+Usage:
+
+```ts
+import { logger } from "@/core/lib/logger";
+
+logger.info("Webhook received", { eventType, userId });
+logger.error("Payment processing failed", { orderId, error: error.message });
+```
+
+Vercel Logs capture `console.log` automatically. With structured JSON format, it's easy to filter and search.
+
+## Alerting
+
+Set up alerts so you don't miss critical issues:
+
+### Categories
+
+**Critical (immediate alert):**
+
+- Site down > 5 minutes
+- Error rate spike (10x baseline)
+- Payment webhook fail rate > 5%
+- DB connection failures
+
+**Warning (Slack notification):**
+
+- Response time p95 > 2 seconds
+- Email bounce rate > 10%
+- Free tier quota approaching limit
+
+**Info (email digest):**
+
+- Daily/weekly summary
+- New user signup count
+
+### Channels
+
+- **Slack** — via webhook URL, create an `#alerts` channel
+- **Email** — fallback if Slack is down
+- **SMS / phone call** — for critical production (Opsgenie, PagerDuty)
+
+With a Sentry + UptimeRobot combo, alert routing is simple:
+
+- Sentry → Slack `#errors` (high-volume)
+- UptimeRobot → Slack `#alerts` + email (rare, important)
+- PagerDuty for on-call rotation (when your team has more than 3 people)
+
+## On-Call Rotation
+
+When your team has more than 3 people and the app is critical:
+
+- Rotate weekly across team members
+- Tools: [PagerDuty](https://www.pagerduty.com), [Opsgenie](https://www.atlassian.com/software/opsgenie)
+- Clear runbooks (what to do when X happens)
+- Escalation path (no response in 15 minutes → next person)
+
+High overhead — only set it up when you truly need it.
+
+## Incident Response Playbook
+
+A simple runbook example:
+
+### Playbook: Site Down
+
+1. **Detect** (UptimeRobot alert) → acknowledge in Slack
+2. **Confirm** — open Vercel Dashboard → latest deployment status
+3. **Diagnose:**
+   - Build log — any errors?
+   - Function logs — stack trace?
+   - Supabase status page — upstream issue?
+4. **Mitigate:**
+   - Roll back to the previous deployment (Vercel → Promote older)
+   - Or hotfix and push
+5. **Communicate:**
+   - Update the status page (if you have one)
+   - Reply to user reports
+6. **Post-incident:**
+   - Incident report: timeline, root cause, action items
+   - Share in the team channel
+   - Update the runbook if needed
+
+## Summary
+
+Minimum setup:
+
+1. **Sentry** — errors
+2. **UptimeRobot** — uptime
+3. **`/api/health` endpoint** — deep check
+4. **Slack channel** — alert routing
+5. **Runbook** — response procedure
+
+Total setup: ~2 hours. Covers 80% of critical monitoring needs.
+
+Add more tools when scale + complexity justify them:
+
+- APM (Datadog) — when tuning performance
+- RUM (Sentry / Datadog) — when focused on user experience
+- Structured logs (LogTail, Axiom) — when debugging complex flows

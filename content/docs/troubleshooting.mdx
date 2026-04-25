@@ -1,0 +1,327 @@
+---
+title: Troubleshooting
+description: Common issues and their fixes — env, auth, email, commerce
+---
+
+Organized by frequency. Scroll to find the case that matches your situation.
+
+## Environment Variables
+
+### `NEXT_PUBLIC_SUPABASE_URL is not defined`
+
+The env var didn't load.
+
+- [ ] The file is named **`.env.local`** (not `.env`, not `env.local`)
+- [ ] It's at the project root (next to `package.json`)
+- [ ] Restart the dev server (Next.js caches env at startup)
+- [ ] No spaces around `=`: `KEY=value` ✅, `KEY = value` ❌
+
+### `ENCRYPTION_KEY env var not set`
+
+Commerce endpoints that encrypt/decrypt crash.
+
+Generate:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Set it in `.env.local` and restart the dev server.
+
+### `ENCRYPTION_KEY must be 32 bytes (base64 encoded). Got N bytes`
+
+Your value isn't 32 bytes when decoded. Don't hand-roll a random string — generate it with the command above.
+
+### `SEND_EMAIL_HOOK_SECRET` Format Wrong
+
+If the hook returns 401 "invalid_signature":
+
+- The value MUST start with `v1,` (a comma, no space)
+- The value MUST include the `whsec_` prefix after that
+- Correct example: `v1,whsec_AbCdEfGh...`
+- Regenerate from the Supabase Dashboard if in doubt
+
+Details in [Email Setup → Troubleshoot](/docs/email/setup#troubleshoot).
+
+---
+
+## Authentication
+
+### Login Succeeds but Redirects Back to `/login` (Infinite Loop)
+
+**Possibility 1: Redirect URL mismatch**
+
+- Supabase Dashboard → **Authentication** → **URL Configuration**
+- Make sure **Redirect URLs** includes:
+  ```
+  http://localhost:3000/api/auth/callback
+  http://localhost:3000/api/auth/confirm
+  http://localhost:3000/**
+  ```
+
+**Possibility 2: No profile in `user_profiles`**
+
+The `handle_new_user()` trigger failed to create the row. Fix:
+
+- Re-apply `setup.sql` (check that the trigger exists)
+- Or create the row manually:
+  ```sql
+  INSERT INTO user_profiles (id, email, role, is_active)
+  VALUES ('<user-id-from-auth.users>', 'email@example.com', 'user', true);
+  ```
+
+**Possibility 3: Profile `is_active = false`**
+
+- An admin previously deactivated the user
+- Update:
+  ```sql
+  UPDATE user_profiles SET is_active = true WHERE email = 'user@example.com';
+  ```
+
+**Possibility 4: Session cookie is corrupt**
+
+- Hard refresh (`Ctrl+Shift+R`)
+- Clear cookies for `localhost:3000`
+- Try incognito mode
+
+### OAuth Error `redirect_uri_mismatch`
+
+**Google OAuth** (or other providers):
+
+- Provider Dashboard → Authorized redirect URIs MUST include:
+  ```
+  https://<YOUR_PROJECT_REF>.supabase.co/auth/v1/callback
+  ```
+- **This is the Supabase URL, not your app URL.** Easy mistake — people often think it should be their app's URL.
+
+### Magic Link / Reset Password Expired
+
+- Default expiry is 1 hour (configurable in Supabase → Auth → Providers → Email)
+- Single-use — the link was already clicked
+- Request a new one from the UI
+
+### "Invalid Login Credentials"
+
+- Wrong email/password (user forgot it)
+- User signed up but hasn't confirmed email (when `requireEmailVerification: true`)
+- Check via Supabase Dashboard → Auth → Users → review the user's status
+
+---
+
+## Email
+
+### Emails Still Not Arriving
+
+Troubleshoot in this order:
+
+**Step 1: Check the Resend Dashboard**
+
+- Dashboard → **Emails**
+- Is there an entry? What's the status?
+  - `Delivered` ✅ — it's delivered; check the user's spam folder
+  - `Bounced` — invalid email address
+  - `Failed` — see error detail
+  - No entry — Resend was never called → step 2
+
+**Step 2: Check Supabase Hook Logs**
+
+- Dashboard → **Authentication** → **Hooks**
+- Send Email Hook → Recent invocations
+- Is there an entry? What's the status?
+  - `200` ✅ — the hook succeeded; the problem is on the Resend side
+  - `401 invalid_signature` — `SEND_EMAIL_HOOK_SECRET` format is wrong (see the Env section)
+  - `500 server_misconfigured` — env is empty
+  - No entry — Supabase never triggered the hook → step 3
+
+**Step 3: Check Supabase Auth Settings**
+
+- Dashboard → **Authentication** → **Providers** → **Email** — Enabled ✓?
+- Hook URL correct and active?
+- Test from the Dashboard: Users → select user → **Send magic link** (manual trigger)
+
+**Step 4: Check App Logs**
+
+- Vercel Logs or the `pnpm dev` terminal
+- Any errors at `/api/auth/hooks/send-email`?
+
+### Emails Land in Spam
+
+- Is your Resend domain **Verified** (SPF + DKIM + DMARC)?
+- New domain (< 30 days old) is often auto-flagged
+- Warm-up: send small volumes first, then ramp up
+- Check domain reputation on [Gmail Postmaster Tools](https://postmaster.google.com)
+
+### Emails Sent from `@supabase.io` Instead of Your Domain
+
+The hook failed or is disabled → Supabase falls back to default SMTP.
+
+- Check the hook status in the Dashboard
+- Verify the `SEND_EMAIL_HOOK_SECRET` format
+- Re-register the hook if in doubt
+
+### Subject Line in Indonesian but You Want English
+
+When the hook is active, subject lines use hardcoded Indonesian from `getSubject()` in `src/shared/email/send-auth-email.tsx`.
+
+If you see an English subject instead:
+
+- The hook isn't active (falling back to Supabase's default SMTP template)
+- HMAC verification failed → Supabase attempts the fallback
+
+To translate emails to English, edit the template files directly — there's no runtime locale for emails yet.
+
+---
+
+## Commerce
+
+### `/products` Page Errors with 500
+
+**Possibility 1: User hasn't connected LS credentials**
+
+- Connect at `/settings/integrations`
+
+**Possibility 2: `ENCRYPTION_KEY` differs between when you connected and when you read**
+
+- You rotated the key without re-encrypting rows
+- Fix: reconnect the credential
+
+**Possibility 3: LS API key was revoked**
+
+- Check LS Dashboard → Settings → API
+- Regenerate and reconnect in the app
+
+### Order Arrives but Status Errors
+
+- Webhook handler threw (check logs)
+- Idempotency table constraint is missing
+- Re-apply `setup.sql`
+
+### Webhook Delivery 401 `invalid_signature`
+
+Secret mismatch between LS Dashboard and the app's database:
+
+- Regenerate the webhook config in the app → copy the new URL and secret
+- Update in LS Dashboard webhook settings
+
+### Webhook Delivery 404
+
+- Wrong or obsolete token in the URL
+- `commerce_webhook_configs` row is missing → regenerate
+
+### Webhook Delivery 500
+
+- Server error in the handler → check Vercel Logs
+- Common causes:
+  - `SUPABASE_SERVICE_ROLE_KEY` is empty (the webhook uses service role)
+  - Database constraint violation (e.g. FK to a deleted user)
+
+---
+
+## Database
+
+### "relation does not exist"
+
+The table hasn't been created. Run `setup.sql`.
+
+### RLS Blocks the Query Even Though You Have Permission
+
+**Debugging steps:**
+
+1. Temporarily disable RLS to test:
+   ```sql
+   ALTER TABLE <table> DISABLE ROW LEVEL SECURITY;
+   -- test query
+   ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
+   ```
+2. If the query works with RLS disabled, the policy is wrong
+3. Check that the policy exists:
+   ```sql
+   SELECT * FROM pg_policies WHERE tablename = '<table>';
+   ```
+
+**Common mistakes:**
+
+- The policy uses `auth.uid()` but the client uses service role → service role bypasses RLS (policies don't apply at all)
+- Policy is `FOR SELECT` but the operation is INSERT → you need `FOR INSERT WITH CHECK (...)`
+- Wrong type cast (e.g. `id = auth.uid()` where `id` is text and `auth.uid()` is uuid)
+
+### Supabase Types Are Out of Sync
+
+After a migration:
+
+```bash
+npx supabase gen types typescript --linked > src/core/types/database.ts
+```
+
+Restart the TS server in your editor.
+
+---
+
+## Deployment
+
+### Build Fails on Vercel
+
+**Error: "Module not found: Can't resolve '@/...'"**
+
+- Is the `tsconfig.json` path alias correct (`"@/*": ["./src/*"]`)?
+- Is the import using `@` absolute paths instead of deep relative paths?
+
+**Error: "Cannot find module 'XXX' during build"**
+
+- A dependency is in `devDependencies` but needed at runtime → move it to `dependencies`
+- Or vice versa
+
+**Error: Environment variable undefined**
+
+- Vercel → Settings → Environment Variables → all envs set?
+- Scope matches (Production vs Preview vs Development)?
+
+### App Works in Dev but Errors in Production
+
+- Different env vars (compare Vercel vs `.env.local`)
+- `NEXT_PUBLIC_APP_URL` is empty → email links point to the wrong domain
+- Different Supabase project (dev vs prod Supabase — check the URL)
+
+### Session Keeps Logging Out in Production
+
+- The `src/proxy.ts` middleware doesn't call `getUser()` → session doesn't auto-refresh
+- JWT expiry (default 1 hour) passes without refresh
+- Cookie settings differ across domains (e.g. localhost vs a Vercel subdomain)
+
+---
+
+## Performance
+
+### Page Loads Slowly
+
+**Possible causes:**
+
+1. Too many sequential DB queries — batch or parallelize
+2. No caching for static data — add Next.js cache (`force-cache`)
+3. Large bundle size — analyze via `pnpm build` output, lazy-load heavy components
+4. Database missing an index — add an index for frequently-used queries
+
+**Profile first:**
+
+```bash
+pnpm build
+# Output shows bundle size per route
+```
+
+### Database Query Timeout
+
+- Add indexes on columns used in `WHERE` / `ORDER BY`
+- Use pagination (don't `SELECT *` without `LIMIT`)
+- Supabase Dashboard → Reports → Query performance — find slow queries
+
+---
+
+## Still Stuck?
+
+If your issue isn't covered above:
+
+1. **Read the error message carefully** — the stack trace usually points to something specific
+2. **Check Vercel Logs / the `pnpm dev` terminal** — errors that don't reach the UI often show up here
+3. **Isolate the problem** — reproduce in minimal scope (new branch, single test case)
+4. **Google the exact error message** — include the library name (e.g. "supabase ssr getUser returns null")
+5. **Check Supabase / Next.js changelogs** — breaking changes sometimes appear in release notes

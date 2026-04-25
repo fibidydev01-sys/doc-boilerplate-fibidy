@@ -1,0 +1,10 @@
+{
+  "title": "Authentication",
+  "pages": [
+    "overview",
+    "email-password",
+    "google-oauth",
+    "magic-link",
+    "adding-oauth-providers"
+  ]
+}

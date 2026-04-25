@@ -1,0 +1,167 @@
+---
+title: Overview
+description: Transactional email system via Resend + Supabase Send Email Hook
+---
+
+## What's Handled
+
+All auth emails are rendered with React Email and sent via Resend. The default Supabase SMTP is bypassed entirely.
+
+| Supabase `email_action_type` | Template Rendered | Trigger |
+|---|---|---|
+| `signup` | `magic-link.tsx` (with `isNewUser=true`) | User registers with `requireEmailVerification: true`, or `signInWithOtp({ shouldCreateUser: true })` for a new email |
+| `magiclink` | `magic-link.tsx` | Existing user requests magic link login |
+| `recovery` | `recovery.tsx` | User requests password reset |
+| `invite` | `confirm-signup.tsx` | Admin invites a user (admin API / dashboard) |
+| `email_change` | `email-change.tsx` | User changes email address |
+| `reauthentication` | `reauthentication.tsx` | Step-up auth (e.g. sensitive action that needs OTP) |
+
+5 template files in `src/shared/email/templates/`. Note that `signup` and `magiclink` share one template (`magic-link.tsx`) because from the end-user's perspective, both flows mean "click this link to sign in" — the difference is just a copy variant controlled by the `isNewUser` prop.
+
+> ⚠️ **All shipped templates and subject lines are in Indonesian.** See [Limitations](#limitations) and [Templates → Internationalization](/docs/email/templates#internationalization-hardcoded) to translate.
+
+## Architecture Flow
+
+```
+User action (e.g. clicks "Forgot password")
+  ↓
+Client calls supabase.auth.resetPasswordForEmail(email, options)
+  ↓
+Supabase Auth triggers the Send Email Hook
+  ↓
+POST https://<your-app>/api/auth/hooks/send-email
+   Body: { user, email_data: { email_action_type, token_hash, ... } }
+   Headers: webhook-id, webhook-timestamp, webhook-signature
+  ↓
+App verifies HMAC (using SUPABASE_AUTH_HOOK_SECRET)
+  ↓
+App routes based on email_action_type → picks the template
+  ↓
+Renders React Email → HTML
+  ↓
+Resend SDK sends the email (using RESEND_API_KEY + RESEND_FROM_EMAIL)
+  ↓
+Returns 200 OK to Supabase
+  ↓
+Email lands in user's inbox ✅
+```
+
+## Why Use a Hook?
+
+Default Supabase built-in SMTP limitations:
+
+- Rate limit ~3 emails/hour per user
+- Templates are basic HTML, no brand color / logo
+- Poor deliverability (often lands in spam)
+- Sender is from the Supabase domain, not yours
+
+The Send Email Hook solves all of this:
+
+- **Unlimited rate** (based on your Resend plan)
+- **React Email templates** with full branding
+- **Verified domain** via Resend (SPF + DKIM + DMARC)
+- **Better deliverability** — Resend tracks metrics
+- **Custom logic** — e.g. translate emails per locale (future extension)
+
+Reference: [Supabase — Send Email Hook](https://supabase.com/docs/guides/auth/auth-hooks/send-email-hook).
+
+## Key Components
+
+### Route Handler
+
+`src/app/api/auth/hooks/send-email/route.ts`:
+
+- Verifies HMAC signature from Supabase
+- Parses the payload → routes to a template by `email_action_type`
+- Returns 200 (success), 401 (invalid signature), 400 (malformed), or 500 (transient error — Supabase retries)
+
+### Send Dispatcher
+
+`src/shared/email/send-auth-email.tsx`:
+
+- Input: the hook payload
+- Output: renders + sends the email
+- Uses a switch based on `email_action_type`
+- Hardcodes Indonesian subject strings (e.g. `Masuk ke ${brandingConfig.shortName}`)
+
+### Templates
+
+`src/shared/email/templates/` — 5 React Email components, all sharing `_layout.tsx`. Body copy is hardcoded Indonesian.
+
+### Utilities
+
+- `verify-webhook.ts` — HMAC verify via the `standardwebhooks` library
+- `resend-client.ts` — singleton Resend SDK + helpers
+
+## Related Env Vars
+
+Details in [Environment Variables](/docs/environment-variables):
+
+- `RESEND_API_KEY` — Resend API key
+- `RESEND_FROM_EMAIL` — sender address
+- `SUPABASE_AUTH_HOOK_SECRET` — HMAC secret (format `v1,whsec_xxx`). Legacy alias `SEND_EMAIL_HOOK_SECRET` still works as a fallback in `verify-webhook.ts`, but new deployments should prefer the canonical name.
+- `NEXT_PUBLIC_APP_URL` — used to build verification URLs in emails
+- `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_SHORT_NAME` — applied to subject + body
+- `NEXT_PUBLIC_APP_PRIMARY_COLOR` — accent color for buttons + links
+
+## Verification URL Construction
+
+The dispatcher builds verification URLs pointing at the app's own callback route (**not** Supabase's built-in verifier), so the profile-verification + activity-log layer kicks in:
+
+```
+{NEXT_PUBLIC_APP_URL}/api/auth/confirm?token_hash=xxx&type=yyy&next=zzz
+```
+
+The `/api/auth/confirm` handler verifies the OTP, establishes a session, runs `verifyProfile()` (exists + active), logs `user.login` when appropriate, and then redirects to the role-aware destination.
+
+## Get Started
+
+- **Not set up yet?** → [Email Setup](/docs/email/setup) (ngrok + hook registration details)
+- **Want to customize templates?** → [Email Templates](/docs/email/templates)
+- **Email not arriving?** → [Troubleshooting](/docs/troubleshooting#email-still-not-arriving)
+
+## Limitations
+
+### Hardcoded Indonesian
+
+All template subjects + bodies are **hardcoded in Bahasa Indonesia**. Changing `NEXT_PUBLIC_APP_LANG` or `appConfig.locale.default` does **not** translate emails.
+
+If your target audience is English-speaking, manually edit:
+
+1. The 5 template files in `src/shared/email/templates/` (body copy, CTAs, greetings)
+2. The `getSubject()` switch in `src/shared/email/send-auth-email.tsx` (subject lines)
+
+There's no runtime i18n for emails — trade-off between complexity and boilerplate scope.
+
+Workaround details in [Email Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+
+### No Retry Mechanism
+
+If the Resend API is down when the hook triggers, the email is lost. The hook handler returns a 500 status so **Supabase will retry** (Supabase Send Email Hook retries on 5xx), but if Resend stays unavailable across retries, the email is eventually dropped.
+
+Mitigation if you need high reliability:
+
+1. Use Resend's batch endpoint (already queue-based on the Resend side)
+2. Or integrate a queue (BullMQ / Upstash Queue) in the hook handler — add retry logic
+
+The default boilerplate doesn't have this — trade-off for simplicity.
+
+### No Email Preview
+
+React Email has a dev server for previewing templates. To use it:
+
+```bash
+npx react-email dev --dir src/shared/email/templates
+```
+
+Open `http://localhost:3000` (default port — check the output). Templates auto-reload on edit.
+
+This dev server isn't wired as a script in `package.json` yet. Add it yourself if needed:
+
+```json
+{
+  "scripts": {
+    "email:dev": "email dev --dir src/shared/email/templates"
+  }
+}
+```

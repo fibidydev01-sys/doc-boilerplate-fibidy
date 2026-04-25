@@ -1,0 +1,162 @@
+---
+title: Products
+description: List products from LS + expose them to users in the UI
+---
+
+## Data Source
+
+Product data **is NOT** stored in the app's DB. Every time the app lists products, it calls the LS API directly.
+
+**Why not cache in the DB?**
+
+- Product data rarely changes, but when it does (price bump, unpublish), it needs to show immediately
+- Caching in the DB → sync complexity (polling, webhooks for products, etc.)
+- The LS API is already fast (~200ms response)
+- Simpler boilerplate = faster MVP
+
+Trade-off: every request to the `/products` page = 1 LS API call. For high scale (thousands of concurrent users), add a cache layer (Redis / Vercel KV).
+
+## Endpoint
+
+```
+GET /api/commerce/products
+```
+
+Auth: session required + credentials exist in the DB.
+
+### Response Shape
+
+```json
+{
+  "products": [
+    {
+      "id": "123456",
+      "name": "Pro Plan",
+      "description": "Access to all features",
+      "price": "19.00",
+      "currency": "USD",
+      "status": "published",
+      "thumb_url": "https://...",
+      "variants": [
+        {
+          "id": "654321",
+          "name": "Monthly",
+          "price": "19.00",
+          "interval": "month",
+          "interval_count": 1
+        }
+      ],
+      "buy_now_url": "https://yourstore.lemonsqueezy.com/checkout/buy/..."
+    }
+  ]
+}
+```
+
+### Filter & Query
+
+The current implementation fetches every published product. If you want to filter (e.g. by category, tags):
+
+1. Set a tag in the LS product
+2. Filter client-side, or add a query param to the endpoint
+
+Extend the endpoint as scope grows.
+
+## UI Page
+
+Page: `/products` (source: `src/app/(dashboard)/products/page.tsx`).
+
+- Grid of product cards
+- Price, name, description
+- **Buy Now** button → triggers the checkout flow
+
+If the user hasn't connected credentials:
+
+- Redirect to `/settings/integrations`
+- Or show an empty state "Connect LS to view products"
+
+## Buy Flow
+
+```
+User clicks "Buy Now"
+  ↓
+POST /api/commerce/checkout
+  body: { variant_id: "654321" }
+  ↓
+Backend calls LS API: POST /checkouts
+  ↓
+LS returns a checkout URL (unique, expires in 24h)
+  ↓
+Redirect the user to the checkout URL (external)
+  ↓
+User pays at LS
+  ↓
+LS sends webhook: order_created
+  ↓
+App upserts to commerce_orders
+```
+
+Details in [Checkout](/docs/commerce/checkout).
+
+## Sync Products to DB (Optional)
+
+If you need to search / filter products in the DB (e.g. full-text search), extend:
+
+### Approach 1 — Cron Polling
+
+A cron job that fetches products from LS every X minutes and upserts into a `commerce_products` table:
+
+- Vercel Cron
+- Supabase Edge Functions
+- External scheduler (cron-job.org, GitHub Actions)
+
+### Approach 2 — Webhook Event
+
+LS sends `product_created` / `product_updated` webhooks — handle them in the same endpoint as order webhooks:
+
+```ts
+// Extend the switch case in webhooks.service.ts
+case "product_created":
+case "product_updated":
+  await upsertProduct(payload);
+  break;
+```
+
+Not in the default boilerplate — implement it yourself if you need it.
+
+## Listing Against Variants
+
+An LS product **has 1+ variants** (e.g. Monthly, Yearly). In the UI:
+
+- Simple pricing: show one price (e.g. the lowest) + link to the LS detail page
+- Advanced pricing: show every variant with a toggle (Monthly / Yearly)
+
+The boilerplate defaults to the simple approach. For multi-variant display:
+
+```tsx
+// Pseudo
+product.variants.map(v => (
+  <div key={v.id}>
+    <span>{v.name} — ${v.price}/{v.interval}</span>
+    <Button onClick={() => checkout(v.id)}>Buy</Button>
+  </div>
+))
+```
+
+## Troubleshoot
+
+### Product List Returns Empty
+
+- The LS store has no published products (check Dashboard → Products)
+- A query filter is wrong
+- The API key is from a different account than the Store
+
+### Error 401 from LS
+
+- API key expired / revoked
+- Reconnect credentials at `/settings/integrations`
+
+### Product Thumbnail Doesn't Show
+
+- LS sometimes returns thumbnail URLs that expire (signed URLs)
+- Refresh the page to re-fetch
+- Alternative: store thumbnails in your own storage if you want stability

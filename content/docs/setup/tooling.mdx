@@ -1,0 +1,128 @@
+---
+title: Tooling
+description: Install the required software + list of third-party service accounts
+---
+
+## Required Software
+
+| Tool | Minimum Version | Check Version |
+|---|---|---|
+| Node.js | 20.x LTS | `node -v` |
+| pnpm | 9.x | `pnpm -v` |
+| Git | 2.30+ | `git --version` |
+
+### Install Node.js
+
+Use a version manager so you can switch versions between projects:
+
+**macOS / Linux (nvm):**
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install 20
+nvm use 20
+```
+
+**Windows:**
+Install [nvm-windows](https://github.com/coreybutler/nvm-windows), then:
+```bash
+nvm install 20
+nvm use 20
+```
+
+Verify:
+```bash
+node -v    # should be v20.x.x or higher
+```
+
+### Install pnpm
+
+```bash
+npm install -g pnpm
+pnpm -v    # should be 9.x.x or higher
+```
+
+Or via the [official installer](https://pnpm.io/installation):
+
+```bash
+# macOS / Linux
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+
+# Windows (PowerShell)
+iwr https://get.pnpm.io/install.ps1 -useb | iex
+```
+
+**Why pnpm instead of npm?** pnpm has a content-addressable store — one version of a package is shared across projects (disk space saved), installs are faster, and dependency resolution is strict (no phantom dependencies).
+
+### Install Git
+
+- **macOS**: `brew install git` (or Xcode Command Line Tools)
+- **Linux (Debian/Ubuntu)**: `sudo apt install git`
+- **Windows**: download from [git-scm.com](https://git-scm.com)
+
+Configure once after install:
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "email@example.com"
+```
+
+## Editor — VS Code Recommended
+
+Download at [code.visualstudio.com](https://code.visualstudio.com).
+
+### Required Extensions
+
+- **ESLint** (`dbaeumer.vscode-eslint`)
+- **Prettier** (`esbenp.prettier-vscode`)
+- **Tailwind CSS IntelliSense** (`bradlc.vscode-tailwindcss`)
+- **MDX** (`unifiedjs.vscode-mdx`) — if you edit docs
+
+### Recommended `.vscode/settings.json`
+
+```json
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["cn\\(([^)]*)\\)", "['\"`]([^'\"`]*).*?['\"`]"]
+  ]
+}
+```
+
+Tailwind classes inside the `cn()` helper get highlighted with the setting above.
+
+## Service Accounts (Free Tier Is Enough)
+
+### Required
+
+| Service | Purpose | Free Tier |
+|---|---|---|
+| [Supabase](https://supabase.com) | DB + Auth + Storage | 500 MB DB, 1 GB storage, 50k MAU |
+| [Resend](https://resend.com) | Transactional email | 3,000 emails/month, 100/day |
+| [Vercel](https://vercel.com) | Hosting | Unlimited deployments, 100 GB bandwidth |
+| [GitHub](https://github.com) | Repo + Vercel deploy trigger | Unlimited public repos |
+
+Setup details per service:
+- [Supabase Setup](/docs/setup/supabase)
+- [Resend Setup](/docs/setup/resend)
+- [Vercel Deployment](/docs/deployment/vercel)
+
+### Optional
+
+| Service | When you need it |
+|---|---|
+| [Google Cloud Console](https://console.cloud.google.com) | If enabling Google OAuth |
+| [Lemon Squeezy](https://lemonsqueezy.com) | If enabling the commerce module |
+| [ngrok](https://ngrok.com) | Testing Send Email Hook + LS webhooks in local dev |
+
+## Verification
+
+Run all of these commands — each should return a version without errors:
+
+```bash
+node -v && pnpm -v && git --version && code --version
+```
+
+If everything works, continue to [Supabase Setup](/docs/setup/supabase).

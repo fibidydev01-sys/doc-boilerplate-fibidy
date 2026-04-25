@@ -1,0 +1,327 @@
+---
+title: Setup
+description: "Extension point — generate VAPID keys + service worker skeleton"
+---
+
+> ⏳ **Extension Point — Not Included.**
+>
+> This page is a setup guide for your fork. The default boilerplate doesn't ship it.
+
+## Pick a Pattern
+
+Before starting, pick one:
+
+- **A. Native Web Push (Service Worker + VAPID)** — Raw, no vendor
+- **B. Managed service (OneSignal / Pusher / FCM)** — Abstracted
+
+This page covers **Pattern A**. For managed services, follow your chosen vendor's docs.
+
+## Pattern A: Native Web Push
+
+### 1. Install Dependency
+
+```bash
+pnpm add web-push
+pnpm add -D @types/web-push
+```
+
+### 2. Generate VAPID Keys
+
+VAPID (Voluntary Application Server Identification) — a keypair to identify your server when sending push.
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Output:
+
+```
+Public Key: BLxxxxxxxxxxx...
+Private Key: xxxxxxxxxxxx...
+```
+
+### 3. Add Env Vars
+
+```bash
+# .env.local
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=BLxxxxxxxxxxx...
+VAPID_PRIVATE_KEY=xxxxxxxxxxxx...
+VAPID_CONTACT_EMAIL=mailto:support@yourdomain.com
+```
+
+`PUBLIC_KEY` must be exposed to the browser (`NEXT_PUBLIC_` prefix). `PRIVATE_KEY` is **server-only** — **do not** prefix with `NEXT_PUBLIC_`.
+
+### 4. Database Migration
+
+Create `supabase/migrations/<timestamp>_add_push_subscriptions.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  endpoint text NOT NULL,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  user_agent text,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, endpoint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subs_user_id
+  ON push_subscriptions(user_id);
+
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "push_subs_self_select"
+  ON push_subscriptions FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "push_subs_self_insert"
+  ON push_subscriptions FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "push_subs_self_delete"
+  ON push_subscriptions FOR DELETE
+  USING (auth.uid() = user_id);
+```
+
+Apply:
+
+```bash
+supabase db push --linked
+npx supabase gen types typescript --linked > src/core/types/database.ts
+```
+
+### 5. Service Worker
+
+Create `public/sw.js`:
+
+```js
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  const data = event.data.json();
+
+  const options = {
+    body: data.body,
+    icon: "/branding/icon-192.png",
+    badge: "/branding/icon-96.png",
+    data: {
+      url: data.url || "/",
+    },
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    clients.openWindow(url),
+  );
+});
+```
+
+`public/sw.js` is served at `/sw.js` — the URL used to register the service worker.
+
+### 6. Register the Service Worker
+
+Client-side, call when a user opts into push notifications:
+
+```tsx
+// src/shared/push/client.ts
+export async function requestPushPermission(): Promise<boolean> {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    console.warn("Push notifications not supported in this browser");
+    return false;
+  }
+
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return false;
+
+  const registration = await navigator.serviceWorker.register("/sw.js");
+
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+    ),
+  });
+
+  // Save to DB
+  await fetch("/api/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+
+  return true;
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return new Uint8Array([...rawData].map((c) => c.charCodeAt(0)));
+}
+```
+
+### 7. API Route — Save Subscription
+
+```ts
+// src/app/api/push/subscribe/route.ts
+import { createClient } from "@/core/lib/supabase/server";
+
+export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return new Response("Unauthorized", { status: 401 });
+
+  const sub = await req.json();
+
+  const { error } = await supabase
+    .from("push_subscriptions")
+    .upsert({
+      user_id: user.id,
+      endpoint: sub.endpoint,
+      p256dh: sub.keys.p256dh,
+      auth: sub.keys.auth,
+      user_agent: req.headers.get("user-agent") ?? null,
+    }, { onConflict: "user_id,endpoint" });
+
+  if (error) return new Response(error.message, { status: 500 });
+
+  return new Response("OK");
+}
+```
+
+### 8. UI — Permission Prompt
+
+```tsx
+// src/components/push-notification-toggle.tsx
+"use client";
+
+import { useState } from "react";
+import { requestPushPermission } from "@/shared/push/client";
+
+export function PushNotificationToggle() {
+  const [loading, setLoading] = useState(false);
+
+  const onEnable = async () => {
+    setLoading(true);
+    const granted = await requestPushPermission();
+    setLoading(false);
+
+    if (granted) {
+      alert("Push notifications enabled!");
+    } else {
+      alert("Permission denied. Check your browser settings.");
+    }
+  };
+
+  return (
+    <button onClick={onEnable} disabled={loading}>
+      {loading ? "Requesting..." : "Enable Push Notifications"}
+    </button>
+  );
+}
+```
+
+Show it on the `/settings` page.
+
+## Pattern B: OneSignal (Managed)
+
+If you pick a managed service:
+
+### 1. Sign Up
+
+[onesignal.com](https://onesignal.com) — free tier 10k subscribers.
+
+### 2. Create App
+
+Dashboard → **New App/Website** → Next.js template:
+
+- **App Name**
+- **Platform**: Web
+- **Site URL**: production URL
+- Upload icon
+
+### 3. Install OneSignal SDK
+
+```bash
+pnpm add react-onesignal
+```
+
+### 4. Init in the App
+
+```tsx
+// src/app/layout.tsx or a provider
+"use client";
+import OneSignal from "react-onesignal";
+
+useEffect(() => {
+  OneSignal.init({ appId: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID! });
+}, []);
+```
+
+### 5. Prompt the User
+
+```tsx
+await OneSignal.Slidedown.promptPush();
+```
+
+OneSignal handles everything:
+
+- Service worker registration
+- VAPID keys
+- Subscription storage (on OneSignal's servers)
+- Cross-browser quirks
+
+### 6. Send from Backend
+
+```ts
+await fetch("https://onesignal.com/api/v1/notifications", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Basic ${process.env.ONESIGNAL_REST_API_KEY}`,
+  },
+  body: JSON.stringify({
+    app_id: process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID,
+    include_external_user_ids: [userId],
+    contents: { en: "Hello!" },
+    headings: { en: "Notification Title" },
+  }),
+});
+```
+
+**Trade-off:** Easier setup, but vendor dependency + user data on OneSignal.
+
+## Platform-Specific Quirks
+
+### iOS Safari
+
+- Web push support from iOS 16.4 (2023)
+- **Only** for PWAs installed to the homescreen (not the regular Safari browser)
+- Permission prompt appears on `Notification.requestPermission()`
+
+### Android Chrome
+
+- Full support
+- Permission prompt appears normally
+
+### Firefox Desktop
+
+- Full support, but subscription endpoints differ from Chrome (Mozilla push service)
+- The web-push library handles this automatically
+
+### Safari Desktop (macOS)
+
+- Full support since macOS Monterey (2021)
+
+## Next
+
+Once set up, continue to [Sending Notifications](/docs/push-notification/sending-notifications).

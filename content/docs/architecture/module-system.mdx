@@ -1,0 +1,126 @@
+---
+title: Module System
+description: 8 boilerplate modules — status, toggles, and important rules
+---
+
+The boilerplate has 8 module slots that can be toggled via config. Three are substantial — `commerce` and `landing` (both fully built) and `admin` (skeleton). The rest are minimal placeholders.
+
+## Module List
+
+| Module | Status | Path | Folder content |
+|---|---|---|---|
+| `commerce` | ✅ **Fully implemented** | `/products` | components, services, lib, types — everything is ready to use |
+| `landing` | ✅ **Fully implemented** | `/` | sections, content, primitives, legal — generic SaaS template ready to customize |
+| `admin` | 🔶 **Skeleton** (role-gated page) | `/admin` | `module.config.ts` + `index.ts` + `README.md` |
+| `saas` | ⏳ Placeholder | `/workspace` | `module.config.ts` + `index.ts` (barrel export) |
+| `blog` | ⏳ Placeholder | `/blog` | `module.config.ts` + `index.ts` |
+| `project` | ⏳ Placeholder | `/projects` | `module.config.ts` + `index.ts` |
+| `forum` | ⏳ Placeholder | `/forum` | `module.config.ts` + `index.ts` |
+| `chat` | ⏳ Placeholder | `/chat` | `module.config.ts` + `index.ts` |
+
+> ⚠️ **"Placeholder" isn't a skeleton.** Folders other than `commerce`, `landing`, and `admin` only contain the naming convention + module config (2 files). There are no page templates, no example components, no scaffolded services. If you enable `blog`, you're starting from zero — you only get the folder structure and the TypeScript metadata object.
+
+## Toggle On/Off
+
+Edit `src/config/app.config.ts`:
+
+```ts
+modules: {
+  admin:    { enabled: true,  path: "/admin" },
+  commerce: { enabled: true,  path: "/products" },
+  landing:  { enabled: true,  path: "/" },
+  saas:     { enabled: false, path: "/workspace" },
+  blog:     { enabled: false, path: "/blog" },
+  project:  { enabled: false, path: "/projects" },
+  forum:    { enabled: false, path: "/forum" },
+  chat:     { enabled: false, path: "/chat" },
+}
+```
+
+### Consequences of Disabling
+
+- Nav links disappear from the sidebar automatically (the boilerplate reads `isModuleEnabled()` in `nav-config.ts`)
+- Routes remain accessible if hit directly — **delete the relevant route folder** (e.g. `src/app/(marketing)/` for landing, `src/app/(dashboard)/<path>/` for dashboard modules) to block them entirely
+- `isModuleEnabled('<name>')` returns `false`
+
+For `landing` specifically: disabling the flag does not delete the public marketing routes (`/`, `/pricing`, `/legal/*`). They live at the route level. To fully strip the marketing surface, delete `src/app/(marketing)/`.
+
+### Consequences of Enabling a Placeholder
+
+If you enable `blog` while the folder is still just a placeholder:
+
+- The sidebar shows the `/blog` link (because nav-config checks `isModuleEnabled`)
+- Clicking the link → 404 (no route exists yet in `src/app/(dashboard)/blog/`)
+- No runtime error — but bad UX
+
+**Recommendation:** delete placeholder modules you won't use. Edit:
+1. `app.config.ts` — remove the entry
+2. The `ModuleName` type — auto-updates (derived from `modules` keys)
+3. Delete the folder `src/modules/<name>/`
+
+## Helper
+
+```ts
+import { isModuleEnabled } from "@/config";
+
+if (isModuleEnabled('commerce')) {
+  // render commerce-related stuff
+}
+```
+
+Used in `nav-config.ts` for conditional nav rendering. Use it elsewhere as needed.
+
+## Module Structure (Reference)
+
+Two modules are fully built and serve as references for different concerns:
+
+- **`commerce`** — services + API endpoints + DB-backed data flows. Reference for any module that wraps a third-party service (LS, Stripe, Paddle, etc.) with encrypted credentials, webhook ingestion, and dashboard CRUD.
+- **`landing`** — content data layer + sections + legal templates. Reference for any module that's primarily presentational with env-driven branding interpolation.
+
+```
+src/modules/commerce/
+├── components/             ← UI components (client + server)
+├── services/               ← DB queries + external API calls
+├── lib/                    ← pure utilities (LS client, webhook verify)
+├── types.ts                ← TypeScript types
+├── module.config.ts        ← module metadata
+├── index.ts                ← barrel export
+└── README.md
+```
+
+```
+src/modules/landing/
+├── components/
+│   ├── layout/             ← MarketingHeader, MarketingFooter
+│   ├── legal/              ← LegalContent, LegalSidebar
+│   ├── primitives/         ← CheckItem, FaqList, FeatureBullet, PriceCard, TrustBadge
+│   └── sections/           ← HeroSection, FeaturesSection, PricingSection, FaqSection, FinalCtaSection
+├── content/                ← all marketing copy as typed `export const`
+│   └── legal/              ← 5 legal page templates + registry
+├── lib/
+│   └── interpolate-brand.ts ← {appName} → brandingConfig.name
+├── types.ts
+├── module.config.ts
+└── index.ts
+```
+
+To build a new module, copy whichever structure fits your concern → edit `module.config.ts` → implement → enable it in the app config.
+
+## Rule: No Cross-Module Imports
+
+The `commerce` module **may not** import from the `admin` module. The `landing` module **may not** import from `commerce`. If shared logic is needed across 2+ modules:
+
+- **Generic (foundational):** move it to `src/core/`
+- **Wrap a 3rd-party service:** move it to `src/shared/`
+
+Enforcement: convention + code review. There's no lint rule that enforces this in the boilerplate (you can add one via an ESLint `no-restricted-imports` rule if you want to be strict).
+
+## Why So Many Placeholders?
+
+Placeholder modules (`saas`, `blog`, `project`, `forum`, `chat`) are intentionally included so that:
+
+1. **The naming convention is clear** — if you want to build a SaaS module, the folder name is standardized: `src/modules/saas/`
+2. **Config slots are ready** — flipping `enabled: true` is all it takes
+3. **TypeScript narrowing** — the `ModuleName` type already includes every possible module
+
+Trade-off: placeholder folders make the project tree look "unfinished". Delete the ones you don't plan to use if that bothers you.

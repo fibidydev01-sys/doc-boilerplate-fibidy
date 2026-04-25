@@ -1,0 +1,210 @@
+---
+title: Project Structure
+description: Folder map + conventions for where to find what
+---
+
+## Top-level
+
+```
+├── public/
+│   ├── branding/              ← logo, favicon, apple-touch-icon
+│   └── manifest.json          ← PWA manifest (dynamic, generated)
+├── src/
+│   ├── app/                   ← Next.js App Router routes
+│   ├── config/                ← config-driven logic
+│   ├── core/                  ← reusable core
+│   ├── modules/               ← 8 boilerplate modules (toggleable)
+│   ├── shared/                ← cross-cutting (email, etc.)
+│   ├── components/ui/         ← shadcn/ui components (copied)
+│   └── proxy.ts               ← Next.js middleware
+├── supabase/
+│   ├── setup.sql              ← DB bootstrap (one-shot)
+│   └── migrations/            ← incremental migrations
+├── .env.example
+├── components.json            ← shadcn/ui config
+├── next.config.ts
+└── package.json
+```
+
+## `src/app/` — Routes
+
+Next.js App Router. Uses `()` grouping for layout scoping without affecting URLs.
+
+```
+src/app/
+├── (auth)/                    ← centered card layout (login, register, forgot password)
+│   ├── login/page.tsx
+│   ├── register/page.tsx
+│   ├── forgot-password/page.tsx
+│   ├── reset-password/page.tsx
+│   └── layout.tsx
+├── (dashboard)/               ← sidebar + header layout
+│   ├── layout.tsx             ← auth guard
+│   ├── dashboard/page.tsx
+│   ├── admin/page.tsx         ← role-gated
+│   ├── products/, orders/, subscriptions/, customers/
+│   ├── profile/, settings/
+├── api/
+│   ├── auth/
+│   │   ├── callback/          ← OAuth PKCE
+│   │   ├── confirm/           ← Email OTP (verify token_hash)
+│   │   └── hooks/send-email/  ← Supabase Send Email Hook receiver
+│   └── commerce/
+│       ├── credentials/       ← CRUD LS API key
+│       ├── products/, orders/, subscriptions/, customers/
+│       ├── checkout/          ← generate checkout link
+│       └── webhooks/[token]/  ← LS webhook receiver
+│       └── webhooks/config/   ← user manages their own webhook config
+├── layout.tsx                 ← root layout
+└── globals.css                ← Tailwind v4 + CSS variables
+```
+
+## `src/config/` — Source of Truth
+
+```
+src/config/
+├── app.config.ts              ← modules, auth, locale, payment
+├── branding.config.ts         ← name, logo, colors (reads env)
+├── permissions.config.ts      ← permission matrix
+└── index.ts                   ← barrel export
+```
+
+Principle: change the config = change the behavior. Don't hard-code in components.
+
+## `src/core/` — Reusable Core
+
+Internal infrastructure. Modules may import from core. Core **may not** import from modules.
+
+```
+src/core/
+├── auth/
+│   ├── components/            ← LoginForm, RegisterForm, provider components
+│   ├── hooks/                 ← useAuth, usePermission
+│   ├── services/              ← profile.service, activity.service
+│   ├── store/                 ← Zustand auth store
+│   ├── lib/                   ← permission check (pure function)
+│   └── provider.tsx           ← AuthProvider shell
+├── components/                ← shared UI (LoadingSpinner, ConfirmDialog, OfflineDetector)
+├── constants/                 ← ROUTES
+├── i18n/                      ← t() function + locale JSON
+├── layout/                    ← AppSidebar, Header, UserMenu, MobileBottomNav
+├── lib/                       ← utils, validators, Supabase clients, encryption
+└── types/                     ← Database type + helpers
+```
+
+## `src/modules/` — Boilerplate Modules
+
+8 module slots. Toggled in `app.config.ts`.
+
+```
+src/modules/
+├── admin/             ← ENABLED (skeleton)
+├── commerce/          ← ENABLED (fully implemented — Phase 1+2)
+├── saas/              ← placeholder (empty)
+├── landing/           ← placeholder (empty)
+├── blog/              ← placeholder (empty)
+├── project/           ← placeholder (empty)
+├── forum/             ← placeholder (empty)
+└── chat/              ← placeholder (empty)
+```
+
+A substantial module (commerce) has: `components/`, `services/`, `lib/`, `types.ts`, `module.config.ts`, `index.ts`.
+
+Details in [Module System](/docs/architecture/module-system).
+
+## `src/shared/` — Cross-Cutting
+
+```
+src/shared/
+└── email/
+    ├── resend-client.ts       ← Resend SDK singleton
+    ├── send-auth-email.tsx    ← template router based on email_action_type
+    ├── verify-webhook.ts      ← HMAC verify via standardwebhooks
+    ├── types.ts
+    └── templates/             ← 5 React Email templates
+        ├── confirm-signup.tsx
+        ├── magic-link.tsx
+        ├── recovery.tsx
+        ├── email-change.tsx
+        ├── reauthentication.tsx
+        └── _layout.tsx        ← shared email shell
+```
+
+## `src/components/ui/` — shadcn/ui
+
+Components are copied into the repo (not npm dependencies). Full control of styling & behavior.
+
+```bash
+npx shadcn@latest add dialog
+```
+
+The component lands in `src/components/ui/dialog.tsx`. Edit freely — it's your code, not vendor code.
+
+## `src/proxy.ts` — Middleware
+
+Named "proxy" (not "middleware") because Next.js reserves `middleware.ts` at the root. In this boilerplate, the root `middleware.ts` re-exports `proxy` so the middleware function still runs.
+
+`proxy.ts` responsibilities:
+
+- Refreshes the Supabase session on every request (SSR)
+- Redirects unauthenticated users to `/login`
+- Sets the `returnTo` query param for deep-linking after login
+- Allows public routes (`/login`, `/register`, auth API endpoints)
+
+## Import Conventions
+
+**Path alias** `@/*` → `./src/*`. Avoid deep relative paths (`../../../`).
+
+```ts
+// ✅ Preferred — absolute import via alias
+import { useAuthStore } from "@/core/auth/store";
+import { FullPageLoader } from "@/core/components";
+
+// ❌ Avoid — deep relative
+import { useAuthStore } from "../../../core/auth/store";
+```
+
+## Naming Conventions
+
+- **File**: `kebab-case.ts` (e.g. `use-auth.ts`, `profile.service.ts`)
+- **Component**: `PascalCase` exported from a kebab-case file
+- **Hook**: `use-` prefix
+- **Service**: `.service.ts` suffix
+- **Store**: `-store.ts` suffix
+- **Types**: `types.ts` or `<domain>.types.ts`
+
+## Dependency Rule
+
+**Inward only.** Higher layers may import from lower layers:
+
+- `app` → imports from `modules`, `core`, `config`
+- `modules` → imports from `core`, `config`, `shared`
+- `core` → imports from `config` only
+- `config` → zero dependencies
+
+Modules **may not directly depend on each other**. Commerce can't import from admin. If shared logic is needed, move it to `core` or `shared`.
+
+Enforcement: convention + code review. No lint rule enforces this — you can add one via `eslint-plugin-import` + a custom `no-restricted-imports` rule.
+
+## Barrel Export Pattern
+
+Most folders have an `index.ts` barrel:
+
+```ts
+// src/core/auth/index.ts
+export { LoginForm, RegisterForm, LogoutButton } from "./components";
+export { useAuth, usePermission } from "./hooks";
+export { can, canAll, canAny, canAccessAdmin } from "./lib";
+export { fetchActiveProfile, verifyProfile } from "./services";
+export { useAuthStore } from "./store";
+```
+
+Consumer imports:
+
+```ts
+import { useAuth, LoginForm } from "@/core/auth";
+// or deep import for optimal tree-shaking
+import { useAuth } from "@/core/auth/hooks";
+```
+
+Deep imports are still encouraged for performance — barrel exports sometimes inflate bundle size if the bundler's tree-shaking isn't optimal.

@@ -1,0 +1,171 @@
+---
+title: Overview
+description: Database architecture — Supabase Postgres + Row-Level Security
+---
+
+## Stack
+
+| Layer | Tech |
+|---|---|
+| DBMS | PostgreSQL 15 (via Supabase) |
+| Access | `@supabase/supabase-js`, `@supabase/ssr` |
+| Security | Row-Level Security (RLS) policies |
+| Types | TypeScript generated from schema |
+
+No ORM abstraction (Prisma/Drizzle). The Supabase SDK is already type-safe via the generated `Database` type, and RLS policies are written in standard SQL.
+
+## Design Principles
+
+1. **RLS-first** — authorization enforced at the database layer
+2. **Nullable-friendly** — new columns must be nullable or have a `DEFAULT` (zero-downtime migration)
+3. **Append-only for audit** — `activity_logs` is never updated, only inserted
+4. **Additive migrations** — no `DROP COLUMN`, no `RENAME` in production
+5. **Encrypted at rest** — sensitive data (LS API keys, webhook secrets) is encrypted before storage
+
+## Active Schema Tables
+
+The boilerplate actively uses these 8 tables:
+
+| Table | Purpose |
+|---|---|
+| `user_profiles` | Extension of `auth.users` — role, name, avatar, locale, active status |
+| `activity_logs` | Append-only audit trail of user actions |
+| `commerce_credentials` | Encrypted LS API key per user |
+| `commerce_webhook_configs` | Per-user webhook URL + secret |
+| `commerce_webhook_events` | Idempotency store (event_id unique) |
+| `commerce_orders` | Mirror of orders from LS |
+| `commerce_subscriptions` | Mirror of subscriptions with status |
+| `commerce_customers` | Mirror of customers from LS |
+
+Every table is **RLS-enabled** — users only see their own data (via their own `user_id` / `owner_user_id` column, depending on the table), admins see everything.
+
+### Legacy Types Present
+
+The generated `Database` type at `src/core/types/database.ts` also includes a `stripe_events` table. This is a **legacy placeholder** from an earlier design phase and is **not used** by any code in Phase 1+2 — the boilerplate ships with Lemon Squeezy, not Stripe. The type can be safely removed when you regenerate types, or left in place as a no-op; it doesn't affect runtime behavior. If you enable Stripe in your fork, you can repurpose this table instead of adding a new one.
+
+## `user_profiles` — Details
+
+Extension of `auth.users`. Main fields:
+
+- `id` (uuid, FK to `auth.users.id`)
+- `full_name`, `email`, `avatar_url`, `phone`
+- `role` — `super_admin | admin | editor | viewer | user`
+- `locale` — `id` or `en`
+- `is_active` — admins can deactivate without delete
+- `metadata` (jsonb) — extension point for per-module data
+
+**Auto-create** — the `handle_new_user()` trigger creates the row automatically when a new user registers via Supabase Auth.
+
+### Extension Point: `metadata` Field
+
+The `metadata` (jsonb) column on `user_profiles` can be augmented per module. Convention: namespace per module.
+
+Example schema augmentation:
+
+```ts
+// src/modules/commerce/types.ts
+declare module "@/core/types" {
+  interface UserProfileMetadata {
+    commerce?: {
+      shipping_addresses?: Address[];
+      preferred_currency?: string;
+    };
+  }
+}
+```
+
+The `mergeProfileMetadata()` helper in `src/core/auth/services/profile.service.ts`:
+
+```ts
+// Merges into a specific namespace, preserves existing data
+await mergeProfileMetadata(supabase, userId, "commerce", {
+  shipping_addresses: [/* ... */]
+});
+// Result: metadata.commerce = { ...existing, shipping_addresses: [...] }
+```
+
+Used when a module needs to store module-specific user data without creating a new table.
+
+## `activity_logs` — Details
+
+Append-only audit trail. Main fields:
+
+- `action` (text, dot-notation) — `user.login`, `profile.update`
+- `resource_type`, `resource_id`
+- `metadata` (jsonb), `ip_address`, `user_agent`
+- `created_at`
+
+API details in [Activity Logging](/docs/activity-logging).
+
+## Profile Read Helpers
+
+Two service functions with different semantics — pick the right one for the case:
+
+- **`fetchActiveProfile(supabase, userId)`** — fetches the full `UserProfile` row with the filter `is_active = true` baked in. Returns `\{ profile, error \}`. Use this when you need the full profile for an authenticated, active user (dashboard pages, `useAuthStore.fetchUser`).
+
+- **`verifyProfile(supabase, userId)`** — returns `\{ exists, isActive, role, error \}` **without** filtering on `is_active`. Use this in auth callbacks (`/api/auth/callback`, `/api/auth/confirm`) where you need to distinguish between "profile not found" (→ `account_not_registered`) and "profile exists but deactivated" (→ `account_deactivated`). Returning a filtered null from `fetchActiveProfile` would conflate both cases into a misleading error.
+
+Both live in `src/core/auth/services/profile.service.ts`.
+
+## Row-Level Security
+
+RLS is active on every `public.*` table. Policy pattern:
+
+```sql
+-- Users can only see their own rows
+CREATE POLICY "user_profiles_self_select"
+  ON user_profiles FOR SELECT
+  USING (auth.uid() = id);
+
+-- Admins can see everything (via helper function)
+CREATE POLICY "user_profiles_admin_select_all"
+  ON user_profiles FOR SELECT
+  USING (public.is_admin(auth.uid()));
+```
+
+The `public.is_admin(user_id)` helper returns boolean — checks the role in `user_profiles`. Used in every policy so the admin-check logic stays consistent.
+
+### Bypass RLS
+
+A client with `SUPABASE_SERVICE_ROLE_KEY` (server-only) bypasses all policies. Use it only in:
+
+- Webhook handlers (from LS or a Supabase hook — no user session)
+- Cross-user admin operations (rare)
+- Background jobs
+
+**Never** use service role in client-side code or in route handlers accessible publicly without a strict auth guard.
+
+The boilerplate only uses service role in `/api/commerce/webhooks/\[token\]/route.ts` — webhook ingestion.
+
+## Storage
+
+Bucket `avatars` (public) — upload path pattern:
+
+```ts
+const filePath = `\${user.id}/avatar-\${Date.now()}.png`;
+await supabase.storage.from("avatars").upload(filePath, file);
+```
+
+RLS enforces this via `storage.foldername(name)[1] = auth.uid()::text` — users can only upload to their own `<user_id>/` folder.
+
+If you need a private bucket (no public URL), create a new bucket with `public: false` + stricter RLS policies.
+
+## Encryption at Rest
+
+Certain columns are encrypted at the app layer before storage:
+
+| Column | Contents |
+|---|---|
+| `commerce_credentials.encrypted_api_key` | LS API key (plaintext not stored) |
+| `commerce_webhook_configs.encrypted_secret` | LS webhook HMAC secret |
+
+Format: AES-256-GCM, base64. Key: `ENCRYPTION_KEY` env var.
+
+Helpers: `encrypt()` + `decrypt()` + `getKeyHint()` in `src/core/lib/encryption.ts`. Used only in server context (file marked `"server-only"`).
+
+**The rows can still be read by their owner via RLS** — but the contents can't be interpreted without decryption. A stolen DB dump without `ENCRYPTION_KEY` = useless encrypted column.
+
+## What's Next
+
+- [Schema & Migration](/docs/database/schema-migration) — migration structure, applying to production
+- [Type Definitions](/docs/database/type-definitions) — generated types + helpers

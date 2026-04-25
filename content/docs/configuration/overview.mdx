@@ -1,0 +1,114 @@
+---
+title: Overview
+description: 3 config files that control all boilerplate behavior
+---
+
+All boilerplate behavior is controlled from 3 files in `src/config/`. The principle: **change config = change behavior**, no need to touch logic code.
+
+## 3 Config Files
+
+```
+src/config/
+├── app.config.ts          ← Module toggles, auth providers, locale, payment
+├── branding.config.ts     ← Name, logo, colors (env-driven)
+├── permissions.config.ts  ← RBAC matrix per role
+└── index.ts               ← Barrel export
+```
+
+## Quick Comparison
+
+| Config | Source | When to edit |
+|---|---|---|
+| `app.config` | Hard-coded in file | Change fundamental behavior (provider, role, module) |
+| `branding.config` | **Env vars** | Re-brand: name, colors, logo. Zero code change. |
+| `permissions.config` | Hard-coded in file | Add/change permissions, adjust RBAC matrix |
+
+## `app.config.ts`
+
+The brain of the boilerplate. Toggles 8 modules, sets auth providers, defines 5 roles, sets redirect rules.
+
+```ts
+export const appConfig = {
+  modules: { /* 8 modules toggle */ },
+  auth: {
+    passwordProviders: ["email", "magic-link"] as const,
+    oauthProviders: ["google"] as const,
+    roles: ["super_admin", "admin", "editor", "viewer", "user"] as const,
+    adminRoles: ["super_admin", "admin"] as const,
+    defaultRole: "user" as const,
+    postLoginRedirect: "/dashboard",
+    postLogoutRedirect: "/login",
+    roleRedirects: { super_admin: "/admin", admin: "/admin" },
+    allowPublicSignup: true,
+    requireEmailVerification: false,
+    magicLinkMode: "login-or-signup",
+  },
+  payment: { enabled: false, mode: "subscription", provider: "lemonsqueezy" },
+  locale: { default: "id", available: ["id", "en"] as const },
+} as const;
+```
+
+> ⚠️ **Default locale is `"id"` (Indonesian).** If your audience is English-speaking, change `default` to `"en"`. Note that this only affects UI strings — email templates are hardcoded Indonesian and require manual translation. See [Internationalization](/docs/internationalization).
+
+Details in [App Config](/docs/configuration/app-config).
+
+## `branding.config.ts`
+
+Single source of truth for app identity. Every value is overridable via env:
+
+```ts
+export const brandingConfig = {
+  name: process.env.NEXT_PUBLIC_APP_NAME ?? "My App",
+  shortName: process.env.NEXT_PUBLIC_APP_SHORT_NAME ?? "App",
+  description: process.env.NEXT_PUBLIC_APP_DESCRIPTION ?? "...",
+  assets: {
+    logo: "/branding/logo.png",
+    favicon: "/branding/favicon.ico",
+    appleTouchIcon: "/branding/apple-touch-icon.png",
+  },
+  theme: {
+    primaryColor: process.env.NEXT_PUBLIC_APP_PRIMARY_COLOR ?? "#16a34a",
+    backgroundColor: process.env.NEXT_PUBLIC_APP_BG_COLOR ?? "#ffffff",
+  },
+  meta: {
+    lang: process.env.NEXT_PUBLIC_APP_LANG ?? "id-ID",
+    // ...
+  },
+  // ...
+} as const;
+```
+
+Used in: browser tab title, meta tags (SEO), login page header, sidebar logo, PWA manifest, and **email templates** (auto-rebrand — except for copy language, which is hardcoded).
+
+Details in [Branding](/docs/configuration/branding).
+
+## `permissions.config.ts`
+
+Permission matrix per role. Wildcard support (`*`, `users:*`, `commerce:orders:*`):
+
+```ts
+export const permissionMatrix: Record<UserRole, readonly string[]> = {
+  super_admin: ["*"],
+  admin: ["admin:access", "users:*", "content:*", "profile:read", "profile:write"],
+  editor: ["content:read", "content:write", "content:publish", "users:read", "profile:read", "profile:write"],
+  viewer: ["content:read", "users:read", "profile:read", "profile:write"],
+  user: ["profile:read", "profile:write"],
+} as const;
+```
+
+Details in [Permissions](/docs/configuration/permissions).
+
+## Import Pattern
+
+```ts
+import {
+  appConfig,
+  brandingConfig,
+  permissionMatrix,
+  isAdminRole,
+  isModuleEnabled,
+  resolvePostLoginRedirect,
+} from "@/config";
+```
+
+Every config is typed via `as const` → enum-like type. The `UserRole`, `OAuthProvider`, `ModuleName` types are derived from config arrays, so changing the config → types auto-update.

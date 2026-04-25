@@ -1,0 +1,9 @@
+{
+  "title": "Configuration",
+  "pages": [
+    "overview",
+    "branding",
+    "app-config",
+    "permissions"
+  ]
+}

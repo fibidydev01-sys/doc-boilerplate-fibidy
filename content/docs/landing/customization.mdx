@@ -1,0 +1,369 @@
+---
+title: Customization
+description: Replace placeholder copy, wire pricing to checkout, toggle sections
+---
+
+The default landing copy is a generic SaaS template. Before launch, customize it to match your product. This page walks through the typical edits in order of priority.
+
+## Pre-Launch Order
+
+1. Set the brand env vars
+2. Replace the hero pitch
+3. Update feature tabs (or keep the four that describe the boilerplate)
+4. Set real pricing + wire CTAs to checkout
+5. Replace generic FAQs with product-specific ones
+6. Review legal pages with a lawyer
+7. Replace logo files in `public/branding/`
+
+## 1. Brand Env Vars
+
+Set these in `.env.local` (dev) and your production environment (Vercel, etc.):
+
+```bash
+NEXT_PUBLIC_APP_NAME="Acme Platform"
+NEXT_PUBLIC_APP_SHORT_NAME="Acme"
+NEXT_PUBLIC_APP_DESCRIPTION="Manage your team's workflows in one place"
+NEXT_PUBLIC_APP_SUPPORT_EMAIL="hello@acme.com"
+NEXT_PUBLIC_APP_LEGAL_JURISDICTION="Delaware, United States"
+```
+
+Every `{appName}` placeholder in content files is replaced with `NEXT_PUBLIC_APP_NAME` at server render time. Other env values (email, jurisdiction) are read directly inside content files via template literals.
+
+Full reference: [Environment Variables → Branding](/docs/environment-variables#6-branding-10-variables).
+
+## 2. Replace the Hero Pitch
+
+Edit `src/modules/landing/content/hero.ts`:
+
+```ts
+export const heroContent: HeroContent = {
+  badge: "Limited beta — invite only",            // ← change or remove
+  headline: {
+    prefix: "Stop wrestling with",
+    highlight: "spreadsheets",
+    suffix: "for project tracking.",
+  },
+  subtitle:
+    "{appName} gives your team a single source of truth for tasks, deadlines, and ownership. Set up in 5 minutes.",
+  primaryCta: {
+    label: "Start free trial",
+    href: "/register",
+  },
+  secondaryCta: {
+    label: "Watch demo",
+    href: "https://youtube.com/watch?v=...",
+    external: true,
+  },
+  trustBadges: [
+    { label: "No credit card required" },
+    { label: "Cancel anytime" },
+    { label: "SOC 2 Type II" },
+  ],
+};
+```
+
+The `{appName}` token is interpolated automatically — leave it in any string where the brand name should appear.
+
+> 💡 **External CTAs.** Set `external: true` on a CTA to render as `<a target="_blank">` instead of `<Link>`. Use this for YouTube demos, external docs, etc.
+
+## 3. Feature Tabs
+
+Edit `src/modules/landing/content/features.ts`. The default ships 4 tabs describing actual codebase capabilities (Authentication, Commerce, Permissions, Dashboard). You have three options:
+
+### A. Keep the defaults (no edits)
+
+Honest description of what the running boilerplate does. Fine for early-stage marketing, especially for a developer-tool audience.
+
+### B. Replace with product-specific feature tabs
+
+Match the structure of `features.ts`:
+
+```ts
+export const featuresContent: FeaturesContent = {
+  eyebrow: "Features",
+  heading: "Everything your team needs",
+  tabs: [
+    {
+      id: "tasks",
+      label: "Tasks",
+      heading: "Track every task in one place.",
+      description: "Kanban boards, assignees, due dates, dependencies — all the basics, none of the bloat.",
+      bullets: [
+        {
+          title: "Kanban + list views",
+          description: "Switch between board and list with one click. Filters and sorts persist per user.",
+        },
+        // ... 3-4 bullets per tab
+      ],
+    },
+    // ... 3-4 tabs total
+  ],
+};
+```
+
+The component renders any number of tabs, any number of bullets per tab. Don't change the type signature — just edit values.
+
+### C. Reduce to one or two tabs
+
+If your product is focused on one thing, shipping 4 tabs feels padded. Cut to one tab and make the bullets richer:
+
+```ts
+tabs: [
+  {
+    id: "core",
+    label: "How it works",
+    // ... rich, single-tab content
+  },
+],
+```
+
+The features component handles single-tab gracefully — the tab list just shows one item.
+
+## 4. Pricing
+
+Edit `src/modules/landing/content/pricing.ts`. Default ships three tiers (Free / $19 Pro / $99 Business). Common adjustments:
+
+### Change Prices
+
+`priceCents` is in **minor units** (cents for USD). `1900` = $19.00.
+
+```ts
+{
+  id: "pro",
+  name: "Pro",
+  priceCents: 2900,                 // $29
+  // ...
+}
+```
+
+The `formatPrice()` helper drops trailing `.00` automatically — `formatPrice(2900)` renders as `"$29"`, `formatPrice(2950)` renders as `"$29.50"`.
+
+### Wire CTAs to Real Checkout
+
+Default CTAs all point to `/register`. To direct users straight to a paid checkout:
+
+```ts
+{
+  id: "pro",
+  cta: {
+    label: "Start Pro plan",
+    href: "https://your-store.lemonsqueezy.com/checkout/buy/abc-def",
+    external: true,                 // ← important for off-site URLs
+  },
+  // ...
+}
+```
+
+For Lemon Squeezy specifically, you can also use the in-app `POST /api/commerce/checkout` endpoint to generate fresh checkout URLs per click — see [Commerce → Checkout](/docs/commerce/checkout). For the marketing page CTAs, hardcoding the public checkout URL from the LS dashboard is simpler and works fine.
+
+### Original-Price Strikethrough
+
+For launch promotions, set `originalPriceCents` to render the original price as struck-through next to the discounted price:
+
+```ts
+{
+  id: "pro",
+  priceCents: 1900,
+  originalPriceCents: 4900,         // shows "$49" struck through next to "$19"
+  badge: "50% off — first 100 customers",
+  // ...
+}
+```
+
+### Single-Tier Mode
+
+If you only sell one product, ship one tier:
+
+```ts
+tiers: [
+  {
+    id: "main",
+    name: "Pro",
+    // ...
+  },
+],
+```
+
+The `<PricingSection>` component auto-detects single-tier and centers the card with a narrower max-width.
+
+### Custom Footnote per Tier
+
+The `footnote` field renders below the price. Use it for billing terms:
+
+```ts
+footnote: "Per month, billed monthly. Cancel anytime."
+footnote: "Per user, per month."
+footnote: "One-time payment. Lifetime access."
+footnote: "Annual contract. Volume discounts available."
+```
+
+## 5. FAQ
+
+Edit `src/modules/landing/content/faq.ts`. The default ships 9 generic SaaS questions. Replace with your own — questions buyers actually ask before signing up are gold:
+
+```ts
+export const faqContent: FaqContent = {
+  eyebrow: "FAQ",
+  heading: "Common questions",
+  items: [
+    {
+      question: "Can I import data from {competitor}?",
+      answer: "Yes — we have a one-click importer for CSV, Trello, Asana, and Notion exports.",
+    },
+    {
+      question: "Do you offer team discounts?",
+      answer: "Yes. Teams of 10+ get 20% off. Contact sales for custom pricing on 50+ seats.",
+    },
+    // ... as many as makes sense
+  ],
+};
+```
+
+Good FAQ topics for SaaS:
+
+- Pricing edge cases (free trial length, what happens after, refund policy)
+- Integration questions (does it work with X?)
+- Migration questions (can I import from Y?)
+- Security / compliance (SOC 2, GDPR, where data is stored)
+- Team / billing (per-seat vs flat, can I add seats mid-cycle)
+
+> 💡 **Don't pad the FAQ.** 5 strong questions beat 15 generic ones. Cut anything that's better answered on a dedicated page.
+
+## 6. Final CTA + Layout
+
+Edit `src/modules/landing/content/layout.ts` to update the final CTA copy and footer links:
+
+```ts
+export const finalCtaContent: FinalCtaContent = {
+  heading: "Stop drowning in spreadsheets.",
+  subtitle: "Join 500+ teams shipping faster with {appName}.",
+  cta: {
+    label: "Start your free trial",
+    href: "/register",
+  },
+};
+
+export const footerContent: FooterContent = {
+  tagline: "Project management for teams that ship.",
+  columns: [
+    {
+      title: "Product",
+      links: [
+        { label: "Features", href: "/#features" },
+        { label: "Pricing", href: "/pricing" },
+        { label: "Changelog", href: "/changelog" },     // ← add new link
+      ],
+    },
+    // ... add columns as needed
+  ],
+  // ...
+};
+```
+
+The footer renders any number of columns and any number of links per column. Header nav (`headerContent.navItems`) follows the same pattern.
+
+## 7. Disable Sections You Don't Want
+
+Edit `src/modules/landing/module.config.ts`:
+
+```ts
+export const landingModuleConfig = {
+  // ...
+  features: {
+    hero: true,
+    features: true,
+    pricing: false,                 // ← hide pricing on home; /pricing route still works
+    faq: true,
+    finalCta: true,
+  },
+} as const;
+```
+
+The home page composition (`(marketing)/page.tsx`) reads this config and skips disabled sections. The standalone `/pricing` route always renders regardless — if you want to hide pricing entirely, also delete `src/app/(marketing)/pricing/`.
+
+## 8. Add a New Section
+
+Three steps:
+
+1. Create the section component:
+   ```tsx
+   // src/modules/landing/components/sections/testimonials-section.tsx
+   import { brandingConfig } from "@/config";
+   import { testimonialsContent } from "../../content/testimonials";
+   import { interpolateBrand } from "../../lib";
+
+   export function TestimonialsSection() {
+     const content = interpolateBrand(testimonialsContent, brandingConfig.name);
+     return <section>{/* ... */}</section>;
+   }
+   ```
+
+2. Add the content file (`content/testimonials.ts`) with a typed export.
+
+3. Compose into the home page:
+   ```tsx
+   // src/app/(marketing)/page.tsx
+   import { TestimonialsSection } from "@/modules/landing";
+
+   export default function HomePage() {
+     return (
+       <>
+         {features.hero && <HeroSection />}
+         {features.features && <FeaturesSection />}
+         <TestimonialsSection />              {/* new */}
+         {features.pricing && <PricingSection />}
+         {/* ... */}
+       </>
+     );
+   }
+   ```
+
+Optionally extend `module.config.ts` `features` with a `testimonials: true` toggle if you want runtime control.
+
+## 9. Replace Logo Files
+
+Drop your icons into `public/branding/`. The default config maps these paths in `branding.config.ts`:
+
+| Slot | Default file | Usage in marketing |
+|---|---|---|
+| `logo` (large) | `favicon-196x196.png` | Hero brand mark, Final CTA logo |
+| `logoSmall` (small) | `favicon-96x96.png` | Header, footer |
+
+Standard favicon-generator output (e.g. [realfavicongenerator.net](https://realfavicongenerator.net)) covers every needed size. Drop the entire generator output into `public/branding/`.
+
+If you want a vector logo instead of favicon-derived images, drop your `logo.png` into `public/branding/` and update the asset paths in `src/config/branding.config.ts`:
+
+```ts
+assets: {
+  logo: "/branding/logo.png",
+  logoSmall: "/branding/logo-small.png",
+  // ...
+}
+```
+
+Marketing components render via `next/image` — any `public/` path works.
+
+## Customization Checklist
+
+Before launching:
+
+- [ ] `NEXT_PUBLIC_APP_NAME` — your real product name
+- [ ] `NEXT_PUBLIC_APP_SUPPORT_EMAIL` — actually checked inbox
+- [ ] `NEXT_PUBLIC_APP_LEGAL_JURISDICTION` — match your business registration
+- [ ] `content/hero.ts` — your pitch (not the auth-first default)
+- [ ] `content/features.ts` — product features (or keep boilerplate-capability tabs)
+- [ ] `content/pricing.ts` — real prices, real CTAs
+- [ ] `content/faq.ts` — questions buyers actually ask
+- [ ] `content/layout.ts` — final CTA, footer columns
+- [ ] `content/legal/*.ts` — reviewed by a lawyer
+- [ ] `public/branding/` — your icon files
+- [ ] `module.config.ts` features toggles — match what you want shown
+
+> ⚠️ **Don't ship the default "Now in beta" badge** with a public-facing brand name. It's a placeholder — either remove the badge field or update it to your actual launch state.
+
+## Related Docs
+
+- [Overview](/docs/landing/overview) — module structure
+- [Legal Pages](/docs/landing/legal-pages) — 5 legal templates explained
+- [Branding](/docs/configuration/branding) — full env-driven brand reference
+- [Commerce → Checkout](/docs/commerce/checkout) — generating LS checkout URLs from inside the app

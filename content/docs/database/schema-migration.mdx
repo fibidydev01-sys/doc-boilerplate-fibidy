@@ -1,0 +1,211 @@
+---
+title: Schema & Migration
+description: Migration structure, applying to Supabase, handling schema evolution
+---
+
+## Layout
+
+```
+supabase/
+├── setup.sql                  ← One-shot bootstrap (fresh project)
+└── migrations/                ← Incremental migrations
+    ├── 20260101000000_initial.sql
+    ├── 20260215000000_add_activity_logs.sql
+    └── 20260301000000_add_commerce_tables.sql
+```
+
+## `setup.sql` vs `migrations/*`
+
+| File | When to use |
+|---|---|
+| `setup.sql` | Fresh project, first time — run once via SQL Editor |
+| `migrations/*.sql` | Incremental update after production is live — run via CLI |
+
+**Don't edit `setup.sql` after production is live.** Use a new migration instead.
+
+## Migration Conventions
+
+### Naming
+
+```
+YYYYMMDDHHMMSS_description.sql
+20260424103000_add_orders_index.sql
+```
+
+The timestamp ensures correct ordering when applied.
+
+### Idempotent
+
+Migrations must be runnable multiple times without errors. Every statement uses `IF EXISTS` / `IF NOT EXISTS`:
+
+```sql
+-- ✅ Idempotent
+CREATE TABLE IF NOT EXISTS public.orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  amount numeric NOT NULL DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS status text DEFAULT 'pending';
+
+CREATE INDEX IF NOT EXISTS idx_orders_user_id
+  ON public.orders(user_id);
+
+DROP POLICY IF EXISTS "orders_self_select" ON public.orders;
+CREATE POLICY "orders_self_select"
+  ON public.orders FOR SELECT
+  USING (auth.uid() = user_id);
+```
+
+```sql
+-- ❌ Not idempotent — errors the second time
+CREATE TABLE public.orders (...);
+CREATE INDEX idx_orders_user_id ON public.orders(user_id);
+```
+
+### Additive-Only
+
+In the production DB:
+
+| Action | OK? | Alternative |
+|---|---|---|
+| Add nullable column / DEFAULT | ✅ | — |
+| Add index (in background for large tables) | ✅ | `CREATE INDEX CONCURRENTLY` |
+| Add new table | ✅ | — |
+| Add enum value | ✅ | `ALTER TYPE ... ADD VALUE` |
+| Rename column | ❌ | Create new column, migrate data, drop in a separate release |
+| Drop column | ❌ | Stop writes first (deploy), then drop in the next release |
+| Drop enum value | ❌ | Not supported by Postgres — create a new enum, migrate |
+| NOT NULL on existing column | ❌ (if rows are null) | Backfill first, add constraint later |
+
+Why? Zero-downtime deploys. The old version + new version of the app must run together during the deploy window.
+
+## Applying Migrations
+
+### Using Supabase CLI
+
+**Install the CLI:**
+
+```bash
+npm install -g supabase
+```
+
+**Login + link project:**
+
+```bash
+supabase login
+supabase link --project-ref <YOUR_PROJECT_REF>
+```
+
+**Apply all pending migrations:**
+
+```bash
+supabase db push --linked
+```
+
+The CLI auto-tracks applied migrations (in the internal `supabase_migrations.schema_migrations` table).
+
+### Using SQL Editor (Manual)
+
+If you don't want to install the CLI:
+
+1. Open the migration file
+2. Copy the entire content
+3. Supabase Dashboard → **SQL Editor** → paste → Run
+
+Trade-off: no state tracking; you have to manually remember which migration was applied in which project.
+
+## Regenerate Types
+
+Every time the schema changes, regenerate TypeScript types:
+
+```bash
+npx supabase gen types typescript --linked > src/core/types/database.ts
+```
+
+Or if using local:
+
+```bash
+npx supabase gen types typescript --local > src/core/types/database.ts
+```
+
+Restart the TS server in VSCode (`Cmd+Shift+P` → "TypeScript: Restart TS Server") so the editor picks it up.
+
+Commit the regenerated `database.ts` alongside the migration SQL.
+
+## Rollback
+
+Postgres has no built-in "undo migration". Strategies:
+
+### Roll-Forward (Preferred)
+
+Create a new migration that undoes the change:
+
+```sql
+-- migrations/20260425000000_revert_add_orders_status.sql
+ALTER TABLE public.orders DROP COLUMN IF EXISTS status;
+```
+
+Apply to production. Still tracked in git history.
+
+### Restore from Backup (Last Resort)
+
+Supabase auto-backs up daily (free tier: 7 days retention, Pro: up to 30).
+
+Dashboard → **Database** → **Backups** → select a restore point → **Restore**.
+
+⚠️ Restore = **replaces** DB state. Data that arrived after the backup point is lost. Use only for disaster recovery.
+
+## Testing Migrations Before Production
+
+### Local Supabase (Recommended)
+
+```bash
+supabase init
+supabase start        # spawn local Postgres + Auth
+supabase db reset     # apply all migrations to local
+```
+
+Test your app against local Supabase (change `NEXT_PUBLIC_SUPABASE_URL` env to the local URL from `supabase status`).
+
+### Staging Project
+
+Create a second Supabase project (free) for staging:
+
+- `my-app-production` — live traffic
+- `my-app-staging` — test migrations before production
+
+Apply migrations to staging first → test → apply to production.
+
+## Data Seeding (Optional)
+
+If you need seed data (default roles, initial products, etc.), put it in a separate file:
+
+```
+supabase/seeds/initial_data.sql
+```
+
+Run manually after `setup.sql`. Don't include it in `migrations/` — so production data isn't overwritten when you re-apply migrations in staging.
+
+## Troubleshoot
+
+### "relation already exists"
+
+Migration isn't idempotent — change `CREATE TABLE` to `CREATE TABLE IF NOT EXISTS`.
+
+### "column already exists"
+
+Same, use `ADD COLUMN IF NOT EXISTS`.
+
+### Type mismatch after regeneration
+
+- The `database.ts` file is out of date → regenerate
+- Import paths using the `Database` type are stale → restart the TS server
+- Still erroring, check the migration applied in the right project (dev vs staging vs prod)
+
+### RLS policy didn't apply
+
+- Policy name duplicate → use the `DROP POLICY IF EXISTS` pattern before `CREATE POLICY`
+- RLS not enabled on the table → add `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`

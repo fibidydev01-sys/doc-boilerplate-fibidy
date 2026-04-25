@@ -1,0 +1,410 @@
+---
+title: Usage
+description: "Extension point — event tracking patterns, naming conventions"
+---
+
+> ⏳ **Extension Point — Not Included.** Assumes your vendor is already set up.
+
+## Event Naming Convention
+
+Consistency matters — renaming after launch means losing historical data.
+
+### Format: `<noun>_<past_tense_verb>`
+
+```
+✅ Good
+  user_signed_up
+  product_viewed
+  checkout_initiated
+  order_placed
+  subscription_upgraded
+  button_clicked
+
+❌ Bad (inconsistent tense, too generic, typo-prone)
+  signup
+  View Product
+  checkoutStart
+  placeOrder
+  upgrade_sub
+  click
+```
+
+### Rationale
+
+- **Past tense** — an event is something that **has already happened**, not an in-flight action
+- **Snake case** — consistent with the boilerplate's naming conventions (also matches the `ActivityAction` enum)
+- **Noun first** — groups related events in queries (all `product_*`, all `checkout_*`)
+
+## Property Naming
+
+Stick to the pattern:
+
+- `snake_case` for keys
+- Values: primitives (string, number, boolean) or ISO strings (dates)
+- No nested objects at the top level if you can avoid it — flat is simpler to query
+
+```ts
+// ✅ Good
+track("order_placed", {
+  order_id: "ord_xxx",
+  amount: 19.00,
+  currency: "USD",
+  product_name: "Pro Plan",
+  variant_name: "Monthly",
+  payment_method: "card",
+  discount_applied: true,
+});
+
+// ❌ Avoid nesting
+track("order_placed", {
+  order: { id: "xxx", amount: 19 },
+  product: { name: "Pro Plan", variant: "Monthly" },
+});
+```
+
+## Event Dictionary (Starter)
+
+Maintain an `docs/events.md` file in your fork as a source of truth:
+
+```md
+# Event Dictionary
+
+## Auth
+
+### user_signed_up
+- **Trigger:** User completes the signup flow
+- **Properties:**
+  - `method`: "email" | "magic_link" | "google"
+  - `referrer`: string
+  - `utm_source`: string
+
+### user_logged_in
+- **Trigger:** User authenticates successfully
+- **Properties:**
+  - `method`: "email" | "magic_link" | "google"
+
+## Commerce
+
+### product_viewed
+- **Trigger:** User opens a product detail page
+- **Properties:**
+  - `product_id`: string
+  - `product_name`: string
+  - `price`: number
+  - `currency`: string
+
+### checkout_initiated
+- **Trigger:** User clicks "Buy Now"
+- **Properties:**
+  - `product_id`, `variant_id`, `amount`, `currency`
+
+### order_placed
+- **Trigger:** Webhook order_created received (server-side)
+- **Properties:**
+  - `order_id`, `amount`, `currency`, `customer_country`
+
+## Engagement
+
+### feature_used
+- **Trigger:** User uses a tracked feature
+- **Properties:**
+  - `feature_name`: string
+  - `context`: string
+```
+
+Update whenever you add a new event. New team members instantly understand the pattern.
+
+## Client-Side Pattern
+
+### Wrapper Helper
+
+```ts
+// src/shared/analytics/client.ts
+import posthog from "posthog-js";
+
+export function track(event: string, properties?: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  posthog.capture(event, properties);
+}
+
+export function identify(userId: string, traits?: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  posthog.identify(userId, traits);
+}
+
+export function resetIdentity() {
+  if (typeof window === "undefined") return;
+  posthog.reset();
+}
+```
+
+Use in a component:
+
+```tsx
+"use client";
+import { track } from "@/shared/analytics/client";
+
+function ProductCard({ product }: { product: Product }) {
+  const onView = () => {
+    track("product_viewed", {
+      product_id: product.id,
+      product_name: product.name,
+      price: product.price,
+    });
+  };
+
+  return (
+    <div onClick={onView}>
+      <h3>{product.name}</h3>
+    </div>
+  );
+}
+```
+
+### Auto-Tracking Common Actions
+
+Wrap Link / Button primitives so they track automatically:
+
+```tsx
+// src/components/ui/tracked-button.tsx
+"use client";
+import { track } from "@/shared/analytics/client";
+import { Button as BaseButton } from "./button";
+
+interface TrackedButtonProps extends ButtonProps {
+  trackEvent?: string;
+  trackProperties?: Record<string, unknown>;
+}
+
+export function TrackedButton({ trackEvent, trackProperties, onClick, ...props }: TrackedButtonProps) {
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (trackEvent) track(trackEvent, trackProperties);
+    onClick?.(e);
+  };
+
+  return <BaseButton {...props} onClick={handleClick} />;
+}
+```
+
+Usage:
+
+```tsx
+<TrackedButton
+  trackEvent="cta_clicked"
+  trackProperties={{ cta: "signup", location: "hero" }}
+  onClick={() => router.push("/register")}
+>
+  Sign Up
+</TrackedButton>
+```
+
+## Server-Side Pattern
+
+### Wrapper Helper
+
+```ts
+// src/shared/analytics/server.ts
+"server-only";
+import { PostHog } from "posthog-node";
+
+let client: PostHog | null = null;
+
+function getClient() {
+  if (!client) {
+    client = new PostHog(process.env.POSTHOG_API_KEY!, {
+      host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+      flushAt: 1,           // flush immediately in serverless
+      flushInterval: 0,
+    });
+  }
+  return client;
+}
+
+export async function trackServerEvent(
+  userId: string,
+  event: string,
+  properties?: Record<string, unknown>,
+) {
+  try {
+    getClient().capture({ distinctId: userId, event, properties });
+  } catch (error) {
+    console.error("[analytics] Failed to track:", error);
+    // Swallow — don't break the main flow
+  }
+}
+```
+
+### Usage in a Route Handler
+
+```ts
+// src/app/api/commerce/webhooks/[token]/route.ts
+import { trackServerEvent } from "@/shared/analytics/server";
+
+// After upserting the order
+await trackServerEvent(userId, "order_placed", {
+  order_id: order.id,
+  amount: order.total_amount,
+  currency: order.currency,
+  customer_country: order.country,
+});
+```
+
+## Funnel Definition
+
+Once events are logged, define funnels in your vendor's dashboard:
+
+**Example: Signup Funnel**
+
+1. `landing_page_viewed` (step 1)
+2. `signup_form_viewed` (step 2)
+3. `signup_form_submitted` (step 3)
+4. `user_signed_up` (step 4 — conversion)
+
+Track drop-off per step:
+
+- Step 1 → 2: landing-to-signup intent
+- Step 2 → 3: form abandonment
+- Step 3 → 4: validation failure / signup error
+
+Identify leaky steps → focus optimization there.
+
+## Cohort Retention
+
+Standard metric: % of users returning on Day N after signup.
+
+Vendors support this out of the box (PostHog, Mixpanel, Amplitude). Or query yourself:
+
+```sql
+-- N-day retention from activity_logs
+WITH signups AS (
+  SELECT user_id, DATE(created_at) AS signup_date
+  FROM activity_logs
+  WHERE action = 'user.signup'
+),
+returns AS (
+  SELECT DISTINCT s.user_id, s.signup_date,
+         al.created_at::date AS return_date
+  FROM signups s
+  JOIN activity_logs al ON al.user_id = s.user_id
+  WHERE al.action = 'user.login'
+    AND al.created_at::date > s.signup_date
+)
+SELECT
+  signup_date,
+  COUNT(DISTINCT user_id) AS cohort_size,
+  COUNT(DISTINCT CASE WHEN return_date = signup_date + INTERVAL '1 day' THEN user_id END) AS d1,
+  COUNT(DISTINCT CASE WHEN return_date = signup_date + INTERVAL '7 days' THEN user_id END) AS d7,
+  COUNT(DISTINCT CASE WHEN return_date = signup_date + INTERVAL '30 days' THEN user_id END) AS d30
+FROM returns
+GROUP BY signup_date
+ORDER BY signup_date DESC;
+```
+
+## A/B Testing
+
+PostHog has feature flags + experiments. But a simpler pattern:
+
+```tsx
+"use client";
+import { usePostHog } from "posthog-js/react";
+
+function Component() {
+  const posthog = usePostHog();
+  const variant = posthog?.getFeatureFlag("homepage-hero-test") ?? "control";
+
+  if (variant === "variant_a") return <HeroVariantA />;
+  return <HeroControl />;
+}
+```
+
+Track conversions:
+
+```ts
+track("cta_clicked", { variant }); // variant from the flag
+```
+
+The vendor aggregates: which variant converts higher + statistical significance.
+
+## Privacy Best Practices
+
+### Don't Send PII
+
+```ts
+// ❌ Bad
+track("signup", { email: "user@example.com", full_name: "John Doe" });
+
+// ✅ Good — use user_id, identify separately (when the vendor supports it)
+track("signup", { user_id: "uuid-xxx", method: "email" });
+identify("uuid-xxx", { /* traits */ });  // PII in identify, not in the event
+```
+
+### Consent Gate
+
+```ts
+if (!hasConsent()) return;
+track("feature_used", { /* ... */ });
+```
+
+### Anonymize IP
+
+Vendor-specific config:
+
+```ts
+// PostHog
+posthog.init(key, {
+  ip: false,  // disable IP capture
+});
+```
+
+## Common Pitfalls
+
+### Event Volume Explodes
+
+Tracking a "click" event on every link → 1000x multiplier → you hit the free tier limit fast.
+
+**Fix:**
+
+- Track only actionable events (conversion, drop-off)
+- Aggregate client-side before sending (e.g. one event per session, not per scroll)
+- Sampling (track 10% of users when volume is super high)
+
+### Event Schema Drift
+
+Developer 1: `track("order_complete", { amount })`
+Developer 2: `track("orderPlaced", { price })`
+
+Result: two event names for the same thing, two property names for the same value → pain in analytics.
+
+**Fix:**
+
+- Central `EventName` enum in code (`src/shared/analytics/events.ts`)
+- Type-safe track function:
+  ```ts
+  type EventPayloads = {
+    order_placed: { order_id: string; amount: number };
+    user_signed_up: { method: string };
+    // ...
+  };
+
+  function track<K extends keyof EventPayloads>(
+    event: K,
+    properties: EventPayloads[K]
+  ): void { /* ... */ }
+  ```
+
+### Not Tracking Failures
+
+Tracking only success → you can't see error rates or conversion leaks.
+
+**Fix:** also track `*_failed`:
+
+```ts
+track("checkout_initiated", { ... });
+
+try {
+  // ... checkout logic
+  track("checkout_completed", { ... });
+} catch (e) {
+  track("checkout_failed", { reason: e.message });
+}
+```

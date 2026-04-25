@@ -1,0 +1,308 @@
+---
+title: Sending Notifications
+description: "Extension point — patterns for sending push notifications from the server"
+---
+
+> ⏳ **Extension Point — Not Included.**
+>
+> This page assumes you've already set things up via [Setup](/docs/push-notification/setup).
+
+## Basic Send
+
+Server-side function to trigger push to one user:
+
+```ts
+// src/shared/push/send.ts
+import webpush from "web-push";
+import { createServiceRoleClient } from "@/core/lib/supabase/service-role";
+
+webpush.setVapidDetails(
+  process.env.VAPID_CONTACT_EMAIL!,
+  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+  process.env.VAPID_PRIVATE_KEY!,
+);
+
+interface PushPayload {
+  title: string;
+  body: string;
+  url?: string;
+  icon?: string;
+}
+
+export async function sendPushToUser(userId: string, payload: PushPayload) {
+  const supabase = createServiceRoleClient();
+
+  const { data: subscriptions } = await supabase
+    .from("push_subscriptions")
+    .select("*")
+    .eq("user_id", userId);
+
+  if (!subscriptions?.length) return { sent: 0 };
+
+  let sent = 0;
+  let failed = 0;
+  const staleIds: string[] = [];
+
+  await Promise.all(
+    subscriptions.map(async (sub) => {
+      try {
+        await webpush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          },
+          JSON.stringify(payload),
+        );
+        sent++;
+      } catch (error: any) {
+        failed++;
+        // 410 = subscription is no longer valid (user disabled notifications, deleted app)
+        if (error.statusCode === 410 || error.statusCode === 404) {
+          staleIds.push(sub.id);
+        }
+      }
+    })
+  );
+
+  // Clean up stale subscriptions
+  if (staleIds.length > 0) {
+    await supabase
+      .from("push_subscriptions")
+      .delete()
+      .in("id", staleIds);
+  }
+
+  return { sent, failed, staleCleaned: staleIds.length };
+}
+```
+
+## Use in Flows
+
+### Commerce — Order Received
+
+Modify the webhook handler:
+
+```ts
+// src/modules/commerce/services/webhooks.service.ts
+import { sendPushToUser } from "@/shared/push/send";
+
+// After upserting the order
+if (eventType === "order_created") {
+  await sendPushToUser(merchantUserId, {
+    title: "💰 New order!",
+    body: `${customerName} just bought ${productName} for $${amount}`,
+    url: `/orders/${order.id}`,
+  });
+}
+```
+
+### Admin Action
+
+```ts
+// When an admin deactivates a user
+await sendPushToUser(targetUserId, {
+  title: "Account Deactivated",
+  body: "Your account has been deactivated. Contact support for details.",
+  url: "/support",
+});
+```
+
+## Broadcast to Multiple Users
+
+```ts
+export async function sendPushBroadcast(userIds: string[], payload: PushPayload) {
+  const results = await Promise.all(
+    userIds.map(userId => sendPushToUser(userId, payload))
+  );
+
+  return {
+    totalSent: results.reduce((acc, r) => acc + r.sent, 0),
+    totalFailed: results.reduce((acc, r) => acc + r.failed, 0),
+  };
+}
+```
+
+> ⚠️ **Scaling concern:** broadcasting to thousands of users, serial / Promise.all can time out. Use a queue (BullMQ, Upstash Queue) or split into batches.
+
+## Scheduled Push (Cron)
+
+E.g. send a morning reminder:
+
+```ts
+// src/app/api/cron/daily-digest/route.ts
+import { sendPushBroadcast } from "@/shared/push/send";
+import { createServiceRoleClient } from "@/core/lib/supabase/service-role";
+
+export async function GET(req: Request) {
+  // Verify cron secret
+  const authHeader = req.headers.get("authorization");
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const supabase = createServiceRoleClient();
+  const { data: users } = await supabase
+    .from("user_profiles")
+    .select("id")
+    .eq("is_active", true);
+
+  const userIds = users?.map((u) => u.id) ?? [];
+
+  await sendPushBroadcast(userIds, {
+    title: "Good morning!",
+    body: "Check your dashboard for today's updates",
+    url: "/dashboard",
+  });
+
+  return new Response("OK");
+}
+```
+
+Register as a cron in `vercel.json`:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-digest",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
+```
+
+## Payload Best Practices
+
+### Keep It Short
+
+- `title` max ~50 chars — the mobile OS truncates in the notification tray
+- `body` max ~150 chars — ideal 1-2 sentences
+
+### Actionable
+
+No use if the user gets a notification but doesn't know what to do. Include:
+
+- **Action** — "Reply", "View", "Dismiss"
+- **Context** — who, what, when
+- **URL** — point to a specific page
+
+**Bad:** "You have a new notification"
+**Good:** "John just replied to your comment on 'Best Coffee Shops'"
+
+### Rate Limit
+
+Users will mute / uninstall if notifications spam them. Guidelines:
+
+- **Critical** (security alerts, payment failures): immediate
+- **Transactional** (orders, messages): immediate per event
+- **Marketing / digest**: max 1 per day, 3 per week
+- **Silent aggregation**: batch small updates into 1 notification (e.g. "5 new comments today")
+
+### User Preferences
+
+Let users control by category:
+
+```ts
+// Extend push_subscriptions
+ALTER TABLE push_subscriptions
+ADD COLUMN preferences jsonb DEFAULT '{"orders":true,"marketing":false}';
+```
+
+Before send:
+
+```ts
+if (category === "marketing" && !sub.preferences.marketing) {
+  return; // skip
+}
+```
+
+## Analytics — Track Opens
+
+Service worker sends an event back to the app when the user clicks a notification:
+
+```js
+// public/sw.js
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  // Track
+  fetch("/api/push/analytics/open", {
+    method: "POST",
+    body: JSON.stringify({
+      notificationId: event.notification.data?.id,
+    }),
+  });
+
+  // Navigate
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(clients.openWindow(url));
+});
+```
+
+DB schema for tracking:
+
+```sql
+CREATE TABLE push_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  notification_id uuid,
+  user_id uuid,
+  event_type text, -- 'sent' | 'opened' | 'dismissed'
+  occurred_at timestamptz DEFAULT now()
+);
+```
+
+Build a dashboard metric:
+
+- **Delivery rate** — sent / total subscriptions
+- **Open rate** — opened / sent
+- **Web push benchmark:** 5-10% open rate
+
+## Testing
+
+### Local Dev
+
+Browsers support web push without HTTPS only on `localhost`. Production requires HTTPS.
+
+```bash
+pnpm dev
+# Enable push on /settings
+# Manual test from the backend
+```
+
+### Mock Send
+
+For unit tests, mock `webpush.sendNotification`:
+
+```ts
+// jest.config
+jest.mock("web-push", () => ({
+  sendNotification: jest.fn().mockResolvedValue({}),
+  setVapidDetails: jest.fn(),
+}));
+```
+
+## Troubleshoot
+
+### Notifications Don't Appear
+
+- Browser settings: notifications blocked for the domain → user checks browser settings
+- Service worker not registered: check `navigator.serviceWorker.getRegistrations()` in devtools
+- Subscription obsolete: check DB, re-subscribe
+- Server error 500 on send → check the VAPID key format
+
+### Notifications Show Duplicate
+
+- Service worker registered multiple times → unregister old before registering new
+- Backend calls send twice because of a race condition
+
+### iOS Doesn't Work
+
+- User must install the PWA to their homescreen first
+- iOS 16.4+ required
+- Safari in incognito mode isn't supported
+
+### Delivery Delay Is Long
+
+- Browser push services throttle in the background (Chrome ~30 seconds, Firefox varies)
+- Normal behavior, can't be changed
+- If it's critical (e.g. 2FA), use SMS or email instead

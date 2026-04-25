@@ -1,0 +1,183 @@
+---
+title: Magic Link
+description: Passwordless login via an email link
+---
+
+## Status
+
+✅ **Fully implemented.** Requires the Email provider enabled + Send Email Hook (recommended for production).
+
+## What's a Magic Link?
+
+The user enters their email → Supabase sends an email with a unique link → the user clicks it → they're logged in. No password to remember.
+
+Good for:
+
+- B2B tools with workforces tired of managing passwords
+- Consumer apps prioritizing frictionless onboarding
+- A fallback for users who forgot their password
+
+## Supabase Setup
+
+### Prerequisite
+
+The Email provider must be enabled (default is on). Check: Supabase Dashboard → **Authentication** → **Providers** → **Email** → ✓ Enabled.
+
+Magic link shares the Email provider — there's no separate toggle.
+
+### Relevant Settings
+
+**Authentication** → **Providers** → **Email**:
+
+- **Mailer OTP Expiry** — default 1 hour. Balance security (short) vs UX (long, if the user opens the email on another device)
+- **Enable email confirmations** — if ON, new users must confirm email first (which also functions as a magic-link login)
+
+### Email Template
+
+Supabase's default template is minimal. When you use Send Email Hook + Resend, it's overridden — the React Email template at `src/shared/email/templates/magic-link.tsx` is used. Auto-rebrands via `brandingConfig`.
+
+## `magicLinkMode` Config
+
+In `src/config/app.config.ts`:
+
+```ts
+auth: {
+  magicLinkMode: "login-or-signup" as "login-or-signup" | "login-only",
+}
+```
+
+### `"login-or-signup"` (default)
+
+- Email not registered → auto-create a new user + send the magic link
+- Click the link → user is created + auto-logged in
+- Good for public signup
+
+### `"login-only"`
+
+- Email must already be registered, otherwise "user not found"
+- Magic link only works for existing users
+- Good for internal tools / invite-only
+
+Affects the `shouldCreateUser` prop in the `supabase.auth.signInWithOtp()` call:
+
+```ts
+const shouldCreateUser =
+  mode === "register" ||
+  appConfig.auth.magicLinkMode === "login-or-signup";
+
+await supabase.auth.signInWithOtp({
+  email: data.email,
+  options: {
+    emailRedirectTo: callbackUrl.toString(),
+    shouldCreateUser,
+  },
+});
+```
+
+Note: `MagicLinkForm` on the `/register` page **always** passes `mode="register"` → `shouldCreateUser: true` regardless of config. That way signup-via-magic-link from the register form always works.
+
+## UI Flow
+
+LoginForm has **Password** + **Magic Link** tabs:
+
+1. User picks the **Magic Link** tab
+2. Enters an email → submits
+3. `MagicLinkForm` sets state `sent = true`
+4. UI displays a green alert: _"A sign-in link has been sent to your email..."_
+5. User opens the email → clicks the link
+6. The link goes to `/api/auth/confirm?token_hash=xxx&type=magiclink&next=/dashboard`
+7. The confirm handler verifies the OTP → establishes the session → verifies the profile → redirects
+
+## Redirect URL
+
+Must be configured in Supabase → **Authentication** → **URL Configuration** → **Redirect URLs**:
+
+```
+http://localhost:3000/api/auth/callback
+http://localhost:3000/api/auth/confirm
+http://localhost:3000/**
+https://your-domain.com/api/auth/callback
+https://your-domain.com/api/auth/confirm
+https://your-domain.com/**
+```
+
+Without this, clicking the email link → `Redirect URL not allowed` error.
+
+## Default SMTP vs Send Email Hook
+
+Without custom SMTP or a hook, Supabase uses default SMTP:
+
+| Setting | Value |
+|---|---|
+| Rate limit | ~3 emails/hour per user |
+| Template | Basic HTML, no branding |
+| Deliverability | Poor (often lands in spam) |
+| Sender domain | `@supabase.io` (not your domain) |
+
+**Fine for dev, not for production.**
+
+### Option A: Custom SMTP (Simple, Legacy)
+
+Supabase Dashboard → **Project Settings** → **Auth** → **SMTP Settings**:
+
+- Use Resend / SendGrid / Mailgun
+- Templates still need to be edited in Supabase Dashboard → Email Templates
+- No support for dynamic branding from code
+
+### Option B: Send Email Hook (Recommended, Modern)
+
+Use the `/api/auth/hooks/send-email` endpoint already shipped in the boilerplate. Templates are in React (not Supabase HTML), with full control + auto-rebrand via `brandingConfig`.
+
+Details: [Email Setup](/docs/email/setup).
+
+## Rate Limit
+
+Default Supabase SMTP: **3 emails per hour per email address**. If exceeded, the user sees `Email rate limit exceeded`.
+
+Fix:
+
+- **Dev:** wait an hour, or manually generate a magic link via Dashboard → **Authentication** → **Users** → select user → **Send magic link**
+- **Production:** use the Send Email Hook — the rate limit follows Resend (100/day free tier, 50k+/month paid)
+
+## Security Notes
+
+- **Single-use** — each link can only be clicked once. Reloading the page after login invalidates it.
+- **Expiry** — default 1 hour (configurable in Supabase). If the link expires, the user must request a new one.
+- **Don't send links to external domains** — `emailRedirectTo` must match Redirect URLs in Supabase. For extra strictness, validate a whitelist on the client.
+- **Phishing risk** — users trained to click links in emails are vulnerable to phishing. Educate them: _"Never log in via a link you didn't request."_
+
+## Disable Magic Link
+
+```ts
+// src/config/app.config.ts
+passwordProviders: ["email"] as const,  // magic-link removed
+```
+
+The LoginForm hides the **Magic Link** tab automatically. Only the Password tab shows.
+
+## Troubleshoot
+
+### Email arrives but the link errors "Redirect URL not allowed"
+
+- Supabase Redirect URLs don't include the `/api/auth/confirm` path
+- Add the `/**` wildcard pattern for your domain
+
+### Click the link → "Token expired"
+
+- Default expiry is 1 hour. If the user opens it later, request a new one
+- Or extend the expiry in Supabase Dashboard → Auth → Providers → Email → Mailer OTP Expiry
+
+### Login succeeds via link but immediately kicks back to `/login`
+
+- Profile verification failed — see [Overview → Profile Verification](/docs/authentication/overview#profile-verification)
+- Check `is_active` column in `user_profiles` = `true`
+- Check the `handle_new_user()` trigger runs when a new user is created
+
+### Magic link UI shows success but the email never arrives
+
+- Default Supabase SMTP is rate-limited (3/hour)
+- Hook secret mismatch → endpoint returns 401 → Supabase falls back to default SMTP (which is rate-limited)
+- Resend domain isn't verified
+- Spam folder
+
+Detailed troubleshooting in [Email → Troubleshoot](/docs/email/setup#troubleshoot).

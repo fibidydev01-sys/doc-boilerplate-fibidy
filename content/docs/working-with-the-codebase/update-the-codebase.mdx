@@ -1,0 +1,207 @@
+---
+title: Update the Codebase
+description: Git workflow for updates from upstream + managing your own branches
+---
+
+## If You Forked from the Upstream Boilerplate
+
+### One-Time Setup
+
+Add the upstream remote:
+
+```bash
+git remote add upstream https://github.com/ORIGINAL/boilerplate.git
+git remote -v
+# origin    https://github.com/YOU/your-project.git (fetch)
+# origin    https://github.com/YOU/your-project.git (push)
+# upstream  https://github.com/ORIGINAL/boilerplate.git (fetch)
+# upstream  https://github.com/ORIGINAL/boilerplate.git (push)
+```
+
+### Pull Updates Regularly
+
+The boilerplate is FINAL at Phase 2 — upstream updates should be rare (unless critical bug fixes).
+
+```bash
+# Make sure the working tree is clean
+git status
+
+# Fetch the latest updates
+git fetch upstream
+
+# Merge into main
+git checkout main
+git merge upstream/main
+
+# Push to origin (your own repo)
+git push origin main
+```
+
+### If There Are Conflicts
+
+Conflicts commonly happen in files you've modified heavily:
+
+- `src/config/app.config.ts` — because you toggled different modules
+- `src/config/branding.config.ts` — because your brand differs
+- `.env.example` — rarely, if upstream updates the env vars list
+- SQL migrations if there are schema changes
+
+Strategy:
+
+1. Accept upstream for the new structure
+2. Re-apply your specific changes afterwards
+3. Commit with a clear message: `chore: merge upstream vX.Y.Z + reapply custom config`
+
+## Normal Development Workflow
+
+### Branch Strategy
+
+```
+main        ← production (protected, tags only)
+  ↑
+staging     ← pre-production testing (optional)
+  ↑
+develop     ← integration branch
+  ↑
+feature/*   ← individual features
+hotfix/*    ← emergency fixes straight to main
+```
+
+### Create a Feature Branch
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/add-user-list
+
+# ... work ...
+
+git add .
+git commit -m "feat: add user list page"
+git push origin feature/add-user-list
+```
+
+Open a PR from `feature/add-user-list` to `develop` on GitHub.
+
+### Merge to Main
+
+```bash
+# After the PR is approved & merged into develop
+git checkout main
+git merge develop
+git tag v1.2.0
+git push origin main --tags
+```
+
+## Conventional Commits
+
+Format:
+
+```
+<type>(<scope>): <subject>
+```
+
+Types:
+
+| Type | When |
+|---|---|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `docs` | Documentation change |
+| `style` | Formatting (doesn't change logic) |
+| `refactor` | Restructuring without changing behavior |
+| `perf` | Performance improvement |
+| `test` | Add / fix tests |
+| `chore` | Maintenance, deps updates, config |
+| `ci` | CI/CD pipeline |
+
+Examples:
+
+```bash
+git commit -m "feat(auth): add GitHub OAuth provider"
+git commit -m "fix(dashboard): resolve layout shift on mobile"
+git commit -m "chore(deps): upgrade next to 16.1.2"
+```
+
+## Database Schema Changes
+
+If your changes touch the database schema:
+
+1. Write a new SQL migration at `supabase/migrations/YYYYMMDDHHMMSS_description.sql`
+2. The SQL must be **idempotent**:
+   - `CREATE TABLE IF NOT EXISTS`
+   - `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+   - `DROP POLICY IF EXISTS` before `CREATE POLICY`
+3. Test on local / staging Supabase projects first
+4. Apply to production:
+   ```bash
+   supabase db push --linked
+   ```
+5. Regenerate types:
+   ```bash
+   npx supabase gen types typescript --linked > src/core/types/database.ts
+   ```
+6. Commit everything: migration SQL + regenerated `database.ts`
+
+## Avoid Breaking Changes in Production DB
+
+Golden rule:
+
+- **New columns** → nullable or has a `DEFAULT`
+- **Existing columns** → don't rename, don't drop (create new, migrate, drop in a breaking release)
+- **New enum values** → append, don't remove
+- **API endpoints** → version if you need to break (e.g. `/api/v2/users`)
+
+This additive-only pattern enables zero-downtime deploys — old version + new version of the app can run simultaneously during the deploy.
+
+If you really need a rename/drop, use a multi-phase migration (additive → backfill → switch read → stop write → drop) — usually takes 5+ deployments.
+
+## Environment Variable Changes
+
+If your fork adds a new env var:
+
+1. Add it to `.env.example` with a default placeholder value
+2. Documentation: update your fork-specific docs (boilerplate docs only cover the 18 defaults)
+3. Set it in Vercel (or other deployment target) before deploying
+4. Verify local dev still works without the new env, or throw a clear error
+
+## Regenerate Supabase Types
+
+After a schema change:
+
+```bash
+# Must already have the project linked
+supabase link --project-ref <YOUR_PROJECT_REF>
+
+# Generate
+npx supabase gen types typescript --linked > src/core/types/database.ts
+```
+
+Restart the TS server in VSCode (`Cmd+Shift+P` → "TypeScript: Restart TS Server") so the editor picks up the new types.
+
+## Rollback Strategy
+
+### Vercel
+
+Vercel Dashboard → project → **Deployments** → previous working deployment → **Promote to Production**. Instant rollback.
+
+### Database
+
+- Schema: roll-forward is safer than rollback (create a new migration that undoes the change)
+- Data: restore from Supabase backup (free tier: 7 daily backups; pro: up to 30 days)
+
+### Env Var
+
+Vercel Dashboard → Environment Variables → edit → redeploy. Env rollback = one redeploy.
+
+## Pre-Push Checklist
+
+Before `git push` to `main`:
+
+- [ ] `pnpm build` passes with no errors
+- [ ] `pnpm lint` zero errors
+- [ ] TypeScript `npx tsc --noEmit` zero errors
+- [ ] Schema migration is idempotent + tested on staging
+- [ ] Types regenerated if schema changed
+- [ ] `.env.example` updated if new env vars exist
+- [ ] Commit message is conventional

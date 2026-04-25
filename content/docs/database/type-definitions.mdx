@@ -1,0 +1,222 @@
+---
+title: Type Definitions
+description: TypeScript types generated from the Supabase schema
+---
+
+The boilerplate uses TypeScript strict mode end-to-end, including database access. The Supabase SDK uses a generic `Database` type parameter generated from the actual schema — full type safety with zero runtime overhead.
+
+## Generated Types
+
+File: `src/core/types/database.ts` — **don't edit manually**, generated via the CLI.
+
+### Structure
+
+```ts
+export type Database = {
+  public: {
+    Tables: {
+      user_profiles: {
+        Row: {...};       // SELECT result
+        Insert: {...};    // INSERT payload
+        Update: {...};    // UPDATE payload (Partial<Row>)
+        Relationships: [...];
+      };
+      activity_logs: { ... };
+      commerce_orders: { ... };
+      // ... all tables
+    };
+    Views: { ... };
+    Functions: { ... };
+    Enums: { ... };
+    CompositeTypes: { ... };
+  };
+  auth: {...};      // Supabase auth schema
+  storage: {...};   // Supabase storage schema
+};
+```
+
+### Regenerate
+
+Every time the schema changes:
+
+```bash
+npx supabase gen types typescript --linked > src/core/types/database.ts
+```
+
+Details in [Schema & Migration](/docs/database/schema-migration#regenerate-types).
+
+## Helper Types
+
+File: `src/core/types/index.ts` + per-domain files. Exposes frequently used types:
+
+```ts
+import type { Database } from "./database";
+
+// Tables.Row shortcut
+export type Tables<T extends keyof Database["public"]["Tables"]> =
+  Database["public"]["Tables"][T]["Row"];
+
+export type UserProfile = Tables<"user_profiles">;
+export type ActivityLog = Tables<"activity_logs">;
+export type CommerceOrder = Tables<"commerce_orders">;
+// ...
+
+// Enum shortcut
+export type UserRole = Database["public"]["Enums"]["user_role"];
+
+// Insert/Update variants
+export type UserProfileInsert = Database["public"]["Tables"]["user_profiles"]["Insert"];
+export type UserProfileUpdate = Database["public"]["Tables"]["user_profiles"]["Update"];
+```
+
+**Import pattern:**
+
+```ts
+import type { UserProfile, UserRole } from "@/core/types";
+```
+
+## Supabase Client Type Parameter
+
+Every Supabase client is instantiated with the `Database` type:
+
+```ts
+// src/core/lib/supabase/client.ts
+import { createBrowserClient } from "@supabase/ssr";
+import type { Database } from "@/core/types/database";
+
+export const createClient = () =>
+  createBrowserClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+```
+
+Effect — queries auto-typed:
+
+```ts
+const { data, error } = await supabase
+  .from("user_profiles")        // autocomplete all tables
+  .select("id, full_name, role") // autocomplete columns
+  .eq("is_active", true);       // type-check value against column
+
+// data: Array<{ id: string; full_name: string; role: UserRole }> | null
+```
+
+## Common Type Narrowing Patterns
+
+### Response type
+
+```ts
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
+
+async function getUser(id: string): Promise<UserProfile | null> {
+  const supabase = createClient();
+  const { data, error }: PostgrestSingleResponse<UserProfile> = await supabase
+    .from("user_profiles")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+```
+
+### Join result
+
+When joining, type inference gets tricky:
+
+```ts
+const { data } = await supabase
+  .from("commerce_orders")
+  .select(`
+    id,
+    total_amount,
+    user:user_profiles(id, full_name, email)
+  `);
+
+// Type hints need `returns<>()` or a manual cast for type-safety
+```
+
+For complex joins, it's recommended to manually define the return type:
+
+```ts
+type OrderWithUser = CommerceOrder & {
+  user: Pick<UserProfile, "id" | "full_name" | "email"> | null;
+};
+
+const { data } = await supabase
+  .from("commerce_orders")
+  .select("id, total_amount, user:user_profiles(id, full_name, email)")
+  .returns<OrderWithUser[]>();
+```
+
+## Config-Derived Types
+
+Some types are derived from config (not the database):
+
+### `UserRole`
+
+Lives in 2 places — one in `database.ts` (Postgres enum) and one in `app.config.ts` (array literal):
+
+```ts
+// From app.config.ts (client-side, strict type narrowing)
+export type UserRole = (typeof appConfig.auth.roles)[number];
+
+// From database.ts (backend enum)
+export type UserRoleFromDB = Database["public"]["Enums"]["user_role"];
+```
+
+Both must stay in sync. Change config → update the DB enum too → regenerate types.
+
+### `OAuthProvider`, `PasswordProvider`, `ModuleName`
+
+Everything derives from `app.config.ts`:
+
+```ts
+export type OAuthProvider = (typeof appConfig.auth.oauthProviders)[number];
+export type PasswordProvider = (typeof appConfig.auth.passwordProviders)[number];
+export type ModuleName = keyof typeof appConfig.modules;
+```
+
+Change the array → types auto-update.
+
+## Casting & Bypass
+
+Sometimes casting is needed — e.g. for JSON columns with a schema you control yourself:
+
+```ts
+// Define your own type
+interface ActivityMetadata {
+  ipAddress?: string;
+  duration?: number;
+  // ...
+}
+
+const meta = row.metadata as ActivityMetadata;
+```
+
+⚠️ Casts bypass type safety. Document why the cast is needed + add runtime validation if the data comes from users.
+
+## Troubleshoot
+
+### Types Don't Match Schema After Migration
+
+- Regenerate `database.ts`
+- Restart the TS server in the editor
+- Delete the `.next/` folder + rebuild (TS cache)
+
+### Import Type Error: "Cannot find module '@/core/types/database'"
+
+- File hasn't been generated — run the `gen types` command
+- Path alias `@/*` isn't set up in `tsconfig.json` — check `paths` config
+
+### Insert Type Complains "missing property X"
+
+- Column X in the DB is non-nullable without a DEFAULT
+- Fix: provide a DEFAULT in the migration, or provide a value in the Insert payload
+
+### `any` Appears in Query Results
+
+- Supabase SDK missing its type parameter → check `createClient<Database>`
+- Or the query uses `.rpc(...)` with a function that hasn't been generated → regenerate types

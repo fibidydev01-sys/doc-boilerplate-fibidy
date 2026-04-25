@@ -1,0 +1,306 @@
+---
+title: Orders
+description: One-time purchases, sync via webhook, listing in UI
+---
+
+## Data Source
+
+Orders **ARE** stored in the local DB (mirrored from LS via webhook). Every list operation queries `commerce_orders`, not LS API.
+
+Why different from products?
+
+- Products change rarely — fresh data from LS each time is fine
+- Orders are immutable (don't change after creation, except status on refund)
+- Caching orders in the DB = fast queries + enables analytics
+
+## Order Creation Flow
+
+```
+User checks out via /products
+  ↓
+Redirect to LS checkout URL
+  ↓
+User pays
+  ↓
+LS sends the `order_created` webhook to /api/commerce/webhooks/{token}
+  ↓
+Handler verifies HMAC + checks idempotency
+  ↓
+Upsert to commerce_orders:
+  {
+    id: uuid (app-generated),
+    provider_order_id: "LS-xxx",
+    owner_user_id: uuid (merchant),
+    customer_email, customer_name, customer_id,
+    status: "paid",
+    currency, subtotal, tax, total,
+    order_created_at, updated_at,
+    raw_payload: {...}  // full LS payload for debugging
+  }
+```
+
+## Table Schema
+
+```sql
+CREATE TABLE commerce_orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'lemonsqueezy',
+  provider_order_id text NOT NULL,
+  order_number int,
+  identifier text,
+  customer_email text,
+  customer_name text,
+  customer_id text,          -- LS customer ID (not app user)
+  store_id text,
+  status text NOT NULL,
+  status_formatted text,
+  currency text NOT NULL,
+  subtotal numeric NOT NULL DEFAULT 0,
+  tax numeric NOT NULL DEFAULT 0,
+  total numeric NOT NULL DEFAULT 0,
+  refunded_amount numeric NOT NULL DEFAULT 0,
+  subtotal_formatted text,
+  total_formatted text,
+  tax_formatted text,
+  refunded_at timestamptz,
+  order_created_at timestamptz,
+  metadata jsonb NOT NULL DEFAULT '{}',
+  raw_payload jsonb,           -- Full LS webhook payload for debugging
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (provider, provider_order_id)
+);
+```
+
+Common status values: `paid`, `refunded`, `partial_refund`, `pending`, `void`.
+
+## Endpoints
+
+### List — `GET /api/commerce/orders`
+
+List orders for the authenticated user from the local DB.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `50` | Max rows returned |
+| `offset` | number | `0` | Pagination offset |
+| `status` | string | — | Filter by status (`paid`, `refunded`, etc.) |
+| `email` | string | — | Filter by customer email (case-insensitive ILIKE) |
+
+Auth: session required. RLS enforces `owner_user_id = auth.uid()`.
+
+**Response:**
+
+```json
+{
+  "orders": [
+    {
+      "id": "uuid",
+      "providerOrderId": "LS-12345",
+      "orderNumber": 42,
+      "customerEmail": "buyer@example.com",
+      "customerName": "John Doe",
+      "status": "paid",
+      "statusLabel": "Paid",
+      "currency": "USD",
+      "subtotal": 1900,
+      "tax": 0,
+      "total": 1900,
+      "totalFormatted": "$19.00",
+      "orderCreatedAt": "2026-04-23T10:00:00Z"
+    }
+  ],
+  "count": 42
+}
+```
+
+Money values are in **minor units** (cents for USD). Use `totalFormatted` for display.
+
+### Detail — `GET /api/commerce/orders/[id]`
+
+Fetch a single order by its LS `provider_order_id` (not the local DB UUID).
+
+**Response:**
+
+```json
+{
+  "order": { /* same shape as list item */ }
+}
+```
+
+Returns 404 if order not found or not owned by the current user.
+
+### Backfill — `POST /api/commerce/orders?pages=N`
+
+Manually sync orders from LS API into the local DB. Useful after first connection (to pull historical orders that existed before webhook was registered) or to recover from missed webhooks.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `pages` | number | `1` | Pages to fetch from LS (100 orders/page). Max 10. |
+
+**Response:**
+
+```json
+{ "synced": 250 }
+```
+
+Upserts by `(provider, provider_order_id)` — existing orders are updated, new ones inserted.
+
+## UI Page
+
+Page: `/orders` (source: `src/app/(dashboard)/orders/page.tsx`).
+
+Shows:
+
+- Orders table with filters (status, date range)
+- Click row → detail page `/orders/[id]` (if implemented)
+- CSV export (optional extension)
+
+## Refund Handling
+
+LS sends an `order_refunded` webhook → the handler updates:
+
+```sql
+UPDATE commerce_orders
+SET status = 'refunded',
+    refunded_amount = total,
+    refunded_at = now(),
+    updated_at = now()
+WHERE provider_order_id = ?;
+```
+
+The UI auto-reflects when users refresh the orders page.
+
+**The boilerplate doesn't initiate refunds from the UI** — the refund flow stays in the LS Dashboard. The merchant has to log into LS to refund.
+
+If you want a refund button in the app:
+
+1. New endpoint: `POST /api/commerce/orders/[id]/refund`
+2. Call the LS API: `POST /orders/{id}/refund`
+3. The `order_refunded` webhook auto-updates status
+
+## Activity Logging
+
+Every order that arrives via webhook is logged in `activity_logs`:
+
+```ts
+await logActivity(supabase, {
+  user_id: merchantUserId,
+  action: "commerce.order_received",
+  resource_type: "commerce_order",
+  resource_id: orderId,
+  metadata: {
+    amount: totalAmount,
+    currency,
+    customer_email,
+  },
+});
+```
+
+Details in [Activity Logging](/docs/activity-logging).
+
+## Query Patterns
+
+### List All Orders for the Current User (Merchant)
+
+```ts
+const { data: orders } = await supabase
+  .from("commerce_orders")
+  .select("*")
+  .order("created_at", { ascending: false })
+  .limit(50);
+```
+
+RLS auto-filters `owner_user_id = auth.uid()`.
+
+### Orders Summary (Dashboard Widget)
+
+```ts
+const { data } = await supabase
+  .rpc("orders_summary", {
+    from_date: "2024-01-01",
+    to_date: "2024-12-31",
+  });
+// Returns: { total_revenue, order_count, avg_order_value }
+```
+
+⚠️ The boilerplate doesn't ship `orders_summary()` by default. Add it yourself if you need aggregation.
+
+### Search by Customer Email
+
+```ts
+const { data } = await supabase
+  .from("commerce_orders")
+  .select("*")
+  .ilike("customer_email", `%${search}%`);
+```
+
+## Common Extensions
+
+### Send a Thank-You Email After Order
+
+Modify the webhook handler:
+
+```ts
+// In src/modules/commerce/services/webhooks.service.ts
+// After upserting the order:
+if (eventType === "order_created") {
+  await sendThankYouEmail({
+    to: order.customer_email,
+    orderName: order.product_name,
+  });
+}
+```
+
+Create a React Email template at `src/shared/email/templates/order-thankyou.tsx`.
+
+### Export Orders CSV
+
+New endpoint:
+
+```ts
+// /api/commerce/orders/export
+export async function GET(req) {
+  const orders = await fetchOrders(...);
+  const csv = convertToCsv(orders);
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv",
+      "Content-Disposition": `attachment; filename="orders.csv"`
+    }
+  });
+}
+```
+
+### Display Product Image from LS
+
+The orders table doesn't store thumbnails — if you need them, fetch from the product listing (cache in memory / Redis).
+
+## Troubleshoot
+
+### Order Checkout Succeeds, but Doesn't Appear in `/orders`
+
+- The webhook isn't set up — see [Commerce Webhooks](/docs/commerce/webhooks)
+- Webhook delivery failed (check LS Dashboard → Webhook → Delivery attempts)
+- HMAC verify failed (401) — check the secret matches
+
+### Duplicate Orders
+
+- The `commerce_webhook_events.event_id UNIQUE` constraint doesn't exist
+- Re-apply `setup.sql`
+- Verify:
+  ```sql
+  SELECT provider_order_id, count(*)
+  FROM commerce_orders
+  GROUP BY provider_order_id HAVING count(*) > 1;
+  ```
+
+### Status Doesn't Update After Refund
+
+- The `order_refunded` webhook isn't being handled — check the handler's `switch` case
+- The LS Dashboard webhook config doesn't include the `order_refunded` event — enable it

@@ -1,0 +1,126 @@
+---
+title: Resend Setup
+description: Set up transactional email delivery via Resend
+---
+
+Resend is used for all auth emails — magic link, password recovery, signup confirmation, email change, reauthentication. Supabase default SMTP has a ~3 emails/hour limit + poor deliverability. Resend fixes this.
+
+## 1. Sign Up + Verify Domain
+
+1. Sign up at [resend.com](https://resend.com) — free tier: 3,000 emails/month, 100/day
+2. Dashboard → **Domains** → **Add Domain** → enter your domain (e.g. `yourdomain.com`)
+3. Resend generates **DNS records** — add them at your DNS provider (Cloudflare, Namecheap, etc.):
+   - **SPF** (TXT record)
+   - **DKIM** (3 CNAME records)
+   - **DMARC** (TXT record) — optional but recommended
+4. After DNS propagates (5-30 minutes), click **Verify DNS Records**
+5. Status must become ✅ **Verified** before you can send email
+
+> 💡 **Don't have your own domain?** Use a subdomain (e.g. `mail.yourdomain.com`) — DNS setup is the same.
+
+> ⚠️ **For dev without a domain:** Resend has a sandbox `onboarding@resend.dev` — lets you send to the email you used to register Resend (not other emails). Good for early local testing. Production requires verifying your own domain.
+
+## 2. Generate an API Key
+
+1. Dashboard → **API Keys** → **Create API Key**
+2. **Name**: anything (e.g. `my-app-production`)
+3. **Permission**: **Full access** (or **Sending access** for tighter scope)
+4. **Domain**: pick one that's verified
+5. Click **Add** → copy the API key (format: `re_xxxxxxxxxxxxx`)
+6. Save as env var `RESEND_API_KEY`
+
+> ⚠️ **The API key appears only once.** Lose it = create a new one. Delete unused keys.
+
+## 3. Choose a Sender Address
+
+Format: `"Sender Name <email@yourdomain.com>"` (RFC 5322).
+
+Env var: `RESEND_FROM_EMAIL`
+
+**Valid examples:**
+
+```bash
+RESEND_FROM_EMAIL="My App <noreply@yourdomain.com>"     # ✅ with sender name
+RESEND_FROM_EMAIL="Acme <hello@acme.com>"                # ✅
+RESEND_FROM_EMAIL=noreply@yourdomain.com                 # ✅ email only (less professional)
+```
+
+**Invalid examples:**
+
+```bash
+RESEND_FROM_EMAIL="Me <email@unverified.com>"            # ❌ domain isn't verified
+RESEND_FROM_EMAIL=myapp@gmail.com                        # ❌ free email provider
+```
+
+**Best practices:**
+
+- Match the sender name to your brand name (`brandingConfig.name`)
+- Use a prefix like `noreply@` / `hello@` / `support@`
+- Don't use personal emails (`john@company.com`) — unprofessional for transactional
+- Domain **must** be verified in Resend
+
+## 4. Test Send
+
+The Resend dashboard has a **Send test email** button:
+
+1. Dashboard → **Emails** → **Send Test Email** (top right)
+2. Pick a sender from the verified domain
+3. To: your own email
+4. Submit → check inbox (+ spam folder)
+
+If it lands in inbox (not spam), DNS config is correct. If it's in spam:
+
+- Make sure SPF + DKIM + DMARC are **all** verified, not just one
+- Newly-registered domains (< 30 days) are often auto-flagged by Gmail/Outlook
+- Warm-up: start with small volume, ramp up over 1-2 weeks
+
+## 5. Rate Limits
+
+Free tier:
+- **100 emails/day**
+- **3,000 emails/month**
+
+Enough for auth-only scope (login, reset password, email change). If you need marketing emails or high-volume transactional, upgrade to a paid plan (starting at $20/month for 50k emails).
+
+## Env Vars Collected
+
+After the steps above, you have:
+
+```bash
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+RESEND_FROM_EMAIL="My App <noreply@yourdomain.com>"
+```
+
+Paste into `.env.local` later. Full details in [Environment Variables](/docs/environment-variables#3-email--resend-2-variables).
+
+## Resend ↔ Supabase Hook Relationship
+
+Resend **doesn't** connect directly to Supabase. Flow:
+
+```
+User requests a magic link
+  ↓
+Supabase triggers Send Email Hook
+  ↓
+POST to /api/auth/hooks/send-email in your app
+  ↓
+App verifies HMAC (with SEND_EMAIL_HOOK_SECRET)
+  ↓
+App renders the React Email template (using brandingConfig)
+  ↓
+App calls resend.emails.send(...) (with RESEND_API_KEY + RESEND_FROM_EMAIL)
+  ↓
+Email lands in the user's inbox ✅
+```
+
+Hook setup details in [Supabase Setup step 6](/docs/setup/supabase#6-send-email-hook-critical-for-auth-email) or [Email Setup](/docs/email/setup).
+
+## Checklist Before Continuing
+
+- [ ] Resend account active
+- [ ] Domain **Verified** (green status in the Resend Dashboard)
+- [ ] API key generated, saved (format `re_xxx`)
+- [ ] Sender address prepared (`"Name <email@verified-domain.com>"`)
+- [ ] Test send succeeded, email landed in inbox
+
+Continue to [Project Setup](/docs/setup/project).

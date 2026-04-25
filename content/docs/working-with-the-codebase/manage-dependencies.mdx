@@ -1,0 +1,188 @@
+---
+title: Manage Dependencies
+description: Add, upgrade, audit packages with pnpm
+---
+
+The boilerplate uses **pnpm**. Forcing npm may install but isn't tested.
+
+## Add a Package
+
+```bash
+# Runtime dependency
+pnpm add <package-name>
+
+# Dev-only (build tools, typing, etc.)
+pnpm add -D <package-name>
+
+# Specific version
+pnpm add next@16.1.1
+```
+
+## Upgrade a Package
+
+### A Single Package
+
+```bash
+# Upgrade to the latest compatible version (semver range)
+pnpm update <package-name>
+
+# Upgrade to the latest (even if major is new) — careful with breaking changes
+pnpm add <package-name>@latest
+```
+
+### Everything
+
+```bash
+# Check what's outdated
+pnpm outdated
+
+# Update everything minor/patch
+pnpm update
+
+# Update everything to latest (via a tool)
+pnpm dlx npm-check-updates -u    # edits package.json
+pnpm install                      # apply
+```
+
+> Always test `pnpm build` and `pnpm dev` after bulk upgrades. Rollback via:
+> ```bash
+> git checkout package.json pnpm-lock.yaml
+> pnpm install
+> ```
+
+## Remove a Package
+
+```bash
+pnpm remove <package-name>
+```
+
+Auto-cleans `package.json` and `pnpm-lock.yaml`.
+
+## Security Audit
+
+```bash
+# Check for vulnerabilities
+pnpm audit
+
+# Auto-fix
+pnpm audit --fix
+```
+
+If there's a vulnerability in a transitive dependency you don't directly install, you sometimes have to:
+
+1. Wait for the maintainer to update
+2. Use `pnpm.overrides` in `package.json` to force a version:
+   ```json
+   {
+     "pnpm": {
+       "overrides": {
+         "vulnerable-package": "^2.0.0"
+       }
+     }
+   }
+   ```
+
+## Lock File Conflict
+
+If `git merge` produces a conflict in `pnpm-lock.yaml`:
+
+```bash
+# Delete & regenerate
+rm pnpm-lock.yaml
+pnpm install
+git add pnpm-lock.yaml
+git commit -m "chore: regenerate lock after merge"
+```
+
+## Peer Dependency Warnings
+
+Next.js 16 uses React 19. Some libraries may still declare peer React 18 — usually safe to ignore if:
+
+- The library is still maintained + has an issue tracking React 19 support
+- The app runs normally in dev & build
+
+If you actually hit a runtime error, alternatives:
+
+1. Wait for the library to update (if maintained)
+2. Fork the library and patch it yourself
+3. Switch to an equivalent library
+
+## Version Coordination
+
+Some packages need matching versions:
+
+| Package group | Note |
+|---|---|
+| `next`, `eslint-config-next` | Same version |
+| `react`, `react-dom`, `@types/react`, `@types/react-dom` | Same version |
+| `@radix-ui/*` | Upgrade together — all Radix primitives |
+| `@supabase/supabase-js`, `@supabase/ssr` | Upgrade together |
+| `@react-email/components`, `@react-email/render` | Upgrade together |
+
+Example React upgrade coordination:
+
+```bash
+pnpm add react@19.2.3 react-dom@19.2.3
+pnpm add -D @types/react@19 @types/react-dom@19
+```
+
+## Runtime vs Dev Dependency
+
+**Runtime (`dependencies`):**
+
+- Used while the app runs in production
+- Examples: `next`, `react`, `@supabase/supabase-js`, `zod`, `resend`
+
+**Dev (`devDependencies`):**
+
+- Used only during development or build
+- Examples: `typescript`, `@types/*`, `eslint`, `tailwindcss`
+
+Rule of thumb: if code imports from a package, that package must live in `dependencies`, even if it "seems like it's only for build". The Next.js SSR runtime needs `dependencies` on the server.
+
+## Shadcn/UI Components
+
+**Shadcn isn't an npm dependency.** Components are generated into the repo. Add a new component:
+
+```bash
+npx shadcn@latest add <component-name>
+```
+
+Examples:
+
+```bash
+npx shadcn@latest add dialog
+npx shadcn@latest add toast
+```
+
+The component lands in `src/components/ui/<component-name>.tsx`. Edit freely — it's your code, not vendor code.
+
+Full list: [ui.shadcn.com/docs/components](https://ui.shadcn.com/docs/components).
+
+## Troubleshoot: `pnpm install` Stuck / Slow
+
+```bash
+# Clear cache
+pnpm store prune
+
+# Delete + reinstall
+rm -rf node_modules pnpm-lock.yaml
+pnpm install
+```
+
+If still stuck on a specific package:
+
+```bash
+pnpm install --registry=https://registry.npmjs.org
+```
+
+For issues with Git dependencies (npm packages from GitHub URLs), check network + SSH keys.
+
+## Why pnpm over npm?
+
+- **Disk efficient** — one version of a package shared across projects (content-addressable store)
+- **Faster installs** — hardlinks + symlinks, not copies
+- **Strict resolution** — no phantom dependencies (packages not declared but accidentally accessible)
+- **Monorepo-friendly** — if you scale to workspaces
+
+Trade-off: some tools (especially older ones) assume a flat `node_modules` layout. Sometimes you need `public-hoist-pattern` in `.npmrc` as a workaround.

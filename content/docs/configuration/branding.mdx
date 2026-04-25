@@ -1,0 +1,159 @@
+---
+title: Branding
+description: Customize name, logo, colors via env vars — zero code change
+---
+
+Every app identity value is controlled from `src/config/branding.config.ts`, which reads from env vars. The principle: **change `.env` + replace assets = rebrand done**.
+
+## Branding Env Vars
+
+10 env vars, all optional (defaults exist). Full details in [Environment Variables → Branding](/docs/environment-variables#6-branding-10-variables).
+
+Quick reference:
+
+| Env Var | Default | Used in |
+|---|---|---|
+| `NEXT_PUBLIC_APP_NAME` | `"My App"` | Tab title, meta, welcome, email branding |
+| `NEXT_PUBLIC_APP_SHORT_NAME` | `"App"` | Sidebar logo, PWA short_name, **email subject** |
+| `NEXT_PUBLIC_APP_DESCRIPTION` | `"A modern web application"` | Meta description, login subtitle |
+| `NEXT_PUBLIC_APP_TAGLINE` | `"Welcome"` | Reserved for marketing |
+| `NEXT_PUBLIC_APP_KEYWORDS` | `"app,web,platform"` | Meta keywords (minor SEO) |
+| `NEXT_PUBLIC_APP_AUTHOR` | `""` | Meta author |
+| `NEXT_PUBLIC_APP_PRIMARY_COLOR` | `"#16a34a"` | Theme color, **email accent** |
+| `NEXT_PUBLIC_APP_BG_COLOR` | `"#ffffff"` | PWA splash screen |
+| `NEXT_PUBLIC_APP_CATEGORY` | `"productivity"` | PWA manifest category |
+| `NEXT_PUBLIC_APP_LANG` | `"id-ID"` | HTML lang attribute, PWA lang |
+
+## Replace Assets
+
+Files to replace in `public/branding/`:
+
+```
+public/branding/
+├── icon-48.png          ← PWA icon 48×48
+├── icon-72.png          ← PWA icon 72×72
+├── icon-96.png          ← PWA icon 96×96
+├── icon-144.png         ← PWA icon 144×144
+├── icon-192.png         ← PWA icon 192×192 (primary)
+├── icon-512.png         ← PWA icon 512×512 (splash screen)
+├── favicon.ico          ← 32×32, browser tab
+└── apple-touch-icon.png ← 180×180, iOS homescreen
+```
+
+### Generate All Sizes at Once
+
+Use an online tool, upload a high-res image (minimum 512×512 PNG) → auto-generate every size:
+
+- **[realfavicongenerator.net](https://realfavicongenerator.net)** — recommended, generates a complete set
+- **[favicon.io](https://favicon.io)** — simpler
+
+Extract the results → replace the files in `public/branding/`.
+
+## Primary Color — Requires Manual Sync
+
+⚠️ **The `NEXT_PUBLIC_APP_PRIMARY_COLOR` env is used in 2 different layers, and the shipped default doesn't match between them:**
+
+1. **Browser chrome + PWA + email templates** — reads directly from env. Default env value: `#16a34a` (Tailwind green-600).
+2. **UI primary color (Tailwind)** — defined in `src/app/globals.css` as the CSS variable `--primary` in **OKLCH** format. The shipped value is a **dark navy** (`oklch(0.208 0.042 265.755)`), NOT green.
+
+**Result out of the box:** your `<meta theme-color>`, PWA splash, and email buttons will be green, but the in-app UI primary will be navy. This is expected — to make them match, update both layers.
+
+When changing the primary color, update in 2 places:
+
+### Step 1: Update env
+
+```bash
+NEXT_PUBLIC_APP_PRIMARY_COLOR="#2563eb"
+```
+
+### Step 2: Update `globals.css`
+
+Open `src/app/globals.css`, find the `:root` section — replace the `--primary` value:
+
+```css
+:root {
+  --primary: oklch(0.546 0.245 262.881);  /* blue-600 in OKLCH */
+  --primary-foreground: oklch(0.98 0.01 255);  /* contrasting foreground */
+  /* ... */
+}
+```
+
+**Convert hex → OKLCH:**
+- [oklch.com](https://oklch.com) — visual picker + paste hex
+- Or grab from the Tailwind v4 OKLCH palette at [tailwindcss.com/docs/colors](https://tailwindcss.com/docs/colors)
+
+Always test the contrast between `--primary-foreground` and `--primary` — make sure it meets WCAG AA (ratio ≥ 4.5:1) for readability.
+
+## Email Template Branding
+
+Email templates in `src/shared/email/templates/` read from `brandingConfig` directly — auto-rebrand when env updates.
+
+What applies:
+
+- **Subject line:** `brandingConfig.shortName`
+- **Header name:** `brandingConfig.name`
+- **Button color:** `brandingConfig.theme.primaryColor`
+- **Link color:** same
+
+⚠️ **Template body language is hardcoded Indonesian.** Changing `NEXT_PUBLIC_APP_LANG` **does not** translate email content. Details in [Email Templates](/docs/email/templates).
+
+## Dark Mode Palette
+
+Dark mode variables also in `globals.css` under `.dark`:
+
+```css
+.dark {
+  --background: oklch(0.129 0.042 264.695);
+  --foreground: oklch(0.984 0.003 247.858);
+  --primary: oklch(0.929 0.013 255.508);
+  /* ... */
+}
+```
+
+The dark mode toggle needs `next-themes` integration (the package is installed, but the provider isn't wired in the default boilerplate). Add it yourself if needed.
+
+## PWA Manifest
+
+`src/app/manifest.json` is a **dynamic** manifest (the filename ends in `.json` but the file exports a TypeScript function — Next.js convention for `MetadataRoute.Manifest`). It reads from `brandingConfig`. Auto-exposed at `/manifest.webmanifest`.
+
+What's generated:
+
+- `name` = `brandingConfig.name`
+- `short_name` = `brandingConfig.shortName`
+- `description` = `brandingConfig.description`
+- `theme_color` = `brandingConfig.theme.primaryColor`
+- `background_color` = `brandingConfig.theme.backgroundColor`
+- `categories` = `[brandingConfig.meta.category]`
+- `lang` = `brandingConfig.meta.lang`
+- `icons` = array from `/branding/icon-{size}.png` (6 sizes)
+
+Icons 192 & 512 are marked as `maskable` — Android adaptive icon support.
+
+## Testing Branding
+
+After updating env + assets:
+
+```bash
+# Restart dev server (env cache)
+pnpm dev
+```
+
+Visual checklist:
+
+- [ ] Browser tab title + favicon updated
+- [ ] Login page shows your logo + name
+- [ ] Sidebar logo (top-left corner) matches the logo
+- [ ] Dashboard welcome message uses your name
+- [ ] PWA install prompt (Chrome/Edge) shows your brand
+- [ ] A triggered email (magic link test) uses your subject + color (note: body text stays Indonesian unless translated)
+- [ ] View source `<head>` — meta tags match
+
+## Per-Environment Branding
+
+Brand is usually the same across envs. If you need different brands (e.g. staging shows `"App (Staging)"`):
+
+- Local `.env.local`: `NEXT_PUBLIC_APP_NAME="My App (Dev)"`
+- Vercel Preview: `NEXT_PUBLIC_APP_NAME="My App (Preview)"`
+- Vercel Production: `NEXT_PUBLIC_APP_NAME="My App"`
+
+Set per-scope in Vercel Dashboard → Environment Variables → per env var, pick scope **Development**, **Preview**, or **Production**.

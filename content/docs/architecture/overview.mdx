@@ -1,0 +1,68 @@
+---
+title: Overview
+description: 4-layer architecture — config, core, modules, shared
+---
+
+The codebase is organized into four layers with a one-way dependency arrow: **inward only**. Higher layers may import from lower layers. The reverse is forbidden.
+
+## Four Layers
+
+```
+┌─────────────────────────────────────────┐
+│ src/app/         ← Next.js routes        │  (top)
+└────────────┬────────────────────────────┘
+             │
+       ┌─────┴─────┐
+       ▼           ▼
+  ┌─────────┐ ┌──────────┐
+  │ modules │ │  shared  │  ← cross-cutting (email, etc.)
+  └────┬────┘ └────┬─────┘
+       │           │
+       └─────┬─────┘
+             ▼
+       ┌──────────┐
+       │   core   │  ← auth, i18n, lib, layout
+       └────┬─────┘
+            ▼
+       ┌──────────┐
+       │  config  │  ← source of truth
+       └──────────┘   (bottom)
+```
+
+## Layer Responsibilities
+
+- **`src/config/`** — Source of truth. Three files (`app.config.ts`, `branding.config.ts`, `permissions.config.ts`). Change the config = change the behavior.
+
+- **`src/core/`** — Reusable infrastructure. Auth, Supabase clients, i18n, layout primitives, shared UI, lib utilities.
+
+- **`src/modules/`** — Feature modules. 8 module slots, 2 fully implemented (`commerce`, `admin`). Toggle on/off via config.
+
+- **`src/shared/`** — Cross-module concerns (email, a notifications placeholder). Wraps external services.
+
+Modules **may not** import from other modules. If shared logic is needed, move it to `core` or `shared`.
+
+## Top-Level Tree
+
+```
+src/
+├── app/              ← Next.js App Router
+├── config/           ← 3 config files
+├── core/             ← auth, layout, lib, i18n, components, types
+├── modules/          ← 8 modules (commerce, admin, saas, ...)
+├── shared/           ← email (impl), notifications/payment (placeholders)
+├── components/ui/    ← shadcn/ui (copy-owned)
+└── proxy.ts          ← middleware (Supabase session refresh)
+```
+
+## Why a `shared/` Folder?
+
+`core` and `shared` have different focus:
+
+- **`core/`** = foundational infrastructure (auth, i18n, layout primitives) — almost every module needs it
+- **`shared/`** = cross-module utilities that wrap external services (email via Resend) — only some modules need it
+
+Rule of thumb: if something wraps a 3rd-party service integration, put it in `shared/`. If something is foundational (auth, i18n), put it in `core/`.
+
+## Module System
+
+Details in [Module System](/docs/architecture/module-system). In short: 8 module slots, toggled in `app.config.ts`. Only `commerce` (fully built) and `admin` (skeleton) are active.

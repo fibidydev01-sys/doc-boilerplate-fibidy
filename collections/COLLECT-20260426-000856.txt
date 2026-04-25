@@ -1,0 +1,2047 @@
+################################################################
+##  DOCUSAURUS — SOURCE COLLECTION
+##  Generated : 2026-04-26 00:08:57
+##  Selection : 1 2 3 4 5 6 7[C
+##  Skipped   : src/components/ui/
+################################################################
+
+
+################################################################
+##  src/app/
+################################################################
+
+
+================================================
+FILE: src/app/(home)/layout.tsx
+Lines: 13
+================================================
+
+import { HomeLayout } from 'fumadocs-ui/layouts/home'
+import { baseOptions } from '@/app/layout.config'
+import type { ReactNode } from 'react'
+
+// ============================================================
+// HOME LAYOUT
+// Wraps the landing page — uses Fumadocs HomeLayout
+// (top navbar, no sidebar)
+// ============================================================
+
+export default function Layout({ children }: { children: ReactNode }) {
+  return <HomeLayout {...baseOptions}>{children}</HomeLayout>
+}
+
+
+
+================================================
+FILE: src/app/(home)/page.tsx
+Lines: 217
+================================================
+
+import Link from 'next/link'
+
+// ============================================================
+// LANDING PAGE
+// Public-facing docs homepage
+// ============================================================
+
+const TECH_STACK = [
+  { label: 'NestJS', color: 'text-red-400' },
+  { label: 'Next.js 16', color: 'text-foreground' },
+  { label: 'PostgreSQL', color: 'text-blue-400' },
+  { label: 'Prisma', color: 'text-primary' },
+  { label: 'Redis', color: 'text-orange-400' },
+  { label: 'WhatsApp', color: 'text-green-400' },
+  { label: 'Midtrans', color: 'text-purple-400' },
+]
+
+const FEATURES = [
+  {
+    icon: '🏪',
+    title: 'Multi-Tenant',
+    description:
+      'Every UMKM gets their own isolated storefront, data, and WhatsApp session.',
+  },
+  {
+    icon: '📦',
+    title: 'Product Catalog',
+    description:
+      '3-tier pricing, stock tracking, multi-image upload via Cloudinary.',
+  },
+  {
+    icon: '🤖',
+    title: 'Auto-Reply Engine',
+    description:
+      '5 trigger types: Welcome, Keyword, Time-Based, Order Status, Payment.',
+  },
+  {
+    icon: '📣',
+    title: 'Social Feed',
+    description:
+      'Cross-tenant discovery with likes, comments, bookmarks, and trending.',
+  },
+  {
+    icon: '💳',
+    title: 'Subscription Gate',
+    description:
+      'STARTER free / BUSINESS Rp 99K/month. Midtrans Snap payment.',
+  },
+  {
+    icon: '🔒',
+    title: 'LTS Certified',
+    description:
+      'v1.0-LTS: 8 migrations, 16 models, 8 enums — additive-only, zero breaking changes.',
+  },
+]
+
+const QUICK_LINKS = [
+  {
+    href: '/docs',
+    title: 'Getting Started',
+    description: 'Install and run in under 5 minutes.',
+    icon: '🚀',
+  },
+  {
+    href: '/docs/architecture',
+    title: 'Architecture',
+    description: 'Multi-tenant design, DB schema, invariants.',
+    icon: '🏗️',
+  },
+  {
+    href: '/docs/api-reference',
+    title: 'API Reference',
+    description: 'All endpoints across v1.0.0–v1.9.0 LTS.',
+    icon: '📡',
+  },
+  {
+    href: '/docs/migrations',
+    title: 'Migrations',
+    description: 'Safe Prisma migration patterns + rollback.',
+    icon: '🗄️',
+  },
+  {
+    href: '/docs/deployment',
+    title: 'Deployment',
+    description: 'CI/CD, Git workflow, production checklist.',
+    icon: '⚡',
+  },
+  {
+    href: '/docs/contributing',
+    title: 'Contributing',
+    description: 'How to contribute to this open-source project.',
+    icon: '🤝',
+  },
+]
+
+export default function HomePage() {
+  return (
+    <main className="min-h-screen">
+
+      {/* ── HERO ── */}
+      <section className="flex flex-col items-center justify-center px-6 pt-20 pb-16 text-center">
+        {/* LTS badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-fd-card px-4 py-1.5 text-xs font-medium text-fd-muted-foreground">
+          <span className="size-1.5 rounded-full bg-primary animate-pulse inline-block" />
+          v1.9.0 — LTS Release · 8 migrations · 16 models
+        </div>
+
+        <h1 className="font-sans text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
+          <span className="text-primary">UMKM</span>{' '}
+          <span className="text-fd-foreground">Platform</span>
+        </h1>
+
+        <p className="mt-6 max-w-2xl text-lg text-fd-muted-foreground leading-relaxed">
+          Open-source multi-tenant platform for Indonesian SMEs — upload
+          products, manage orders, automate WhatsApp, grow with social feed.
+          Production-ready. LTS certified.
+        </p>
+
+        {/* tech stack pills */}
+        <div className="mt-8 flex flex-wrap justify-center gap-2">
+          {TECH_STACK.map((tech) => (
+            <span
+              key={tech.label}
+              className={`rounded-md border border-fd-border bg-fd-card px-3 py-1 font-mono text-xs font-medium ${tech.color}`}
+            >
+              {tech.label}
+            </span>
+          ))}
+        </div>
+
+        {/* CTAs */}
+        <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <Link
+            href="/docs"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Get Started
+            <span aria-hidden>→</span>
+          </Link>
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-6 py-3 text-sm font-semibold text-fd-foreground transition-colors hover:bg-fd-accent"
+          >
+            GitHub
+            <span aria-hidden>↗</span>
+          </a>
+        </div>
+      </section>
+
+      {/* ── FEATURES GRID ── */}
+      <section className="mx-auto max-w-5xl px-6 pb-16">
+        <h2 className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-fd-muted-foreground">
+          What's Included
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f) => (
+            <div
+              key={f.title}
+              className="flex flex-col gap-3 rounded-xl border border-fd-border bg-fd-card p-6"
+            >
+              <span className="text-2xl">{f.icon}</span>
+              <div>
+                <p className="font-semibold text-fd-foreground">{f.title}</p>
+                <p className="mt-1 text-sm text-fd-muted-foreground">
+                  {f.description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── QUICK LINKS ── */}
+      <section className="mx-auto max-w-5xl px-6 pb-24">
+        <h2 className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-fd-muted-foreground">
+          Documentation
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {QUICK_LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="group flex flex-col gap-3 rounded-xl border border-fd-border bg-fd-card p-6 transition-colors hover:border-primary/50 hover:bg-fd-accent"
+            >
+              <span className="text-2xl">{link.icon}</span>
+              <div>
+                <p className="font-semibold text-fd-foreground group-hover:text-primary transition-colors">
+                  {link.title}
+                </p>
+                <p className="mt-1 text-sm text-fd-muted-foreground">
+                  {link.description}
+                </p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer className="border-t border-fd-border py-8 text-center text-xs text-fd-muted-foreground">
+        <p>
+          UMKM Platform · Open Source · v1.0-LTS ·{' '}
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary transition-colors"
+          >
+            GitHub ↗
+          </a>
+        </p>
+      </footer>
+    </main>
+  )
+}
+
+
+
+================================================
+FILE: src/app/api/search/route.ts
+Lines: 4
+================================================
+
+import { source } from '@/lib/source'
+import { createFromSource } from 'fumadocs-core/search/server'
+
+export const { GET } = createFromSource(source)
+
+
+
+================================================
+FILE: src/app/docs/[[...slug]]/page.tsx
+Lines: 78
+================================================
+
+import {
+  DocsPage,
+  DocsBody,
+  DocsTitle,
+  DocsDescription,
+} from 'fumadocs-ui/page'
+import { notFound } from 'next/navigation'
+import { source } from '@/lib/source'
+import { useMDXComponents } from '@/mdx-components'
+import { PageBreadcrumb, buildCrumbsFromSlug } from '@/components/docs/page-breadcrumb'
+import { FeedbackLink } from '@/components/docs/feedback-link'
+import type { Metadata } from 'next'
+
+// ============================================================
+// DOCS PAGE — dynamic catch-all
+// Railway-style: breadcrumb above title, minimal footer
+// Trust Fumadocs TOC (clerk style) for accuracy
+// ============================================================
+
+interface Props {
+  params: Promise<{ slug?: string[] }>
+}
+
+export default async function Page({ params }: Props) {
+  const { slug } = await params
+  const page = source.getPage(slug)
+
+  if (!page) notFound()
+
+  const MDX = page.data.body
+  const mdxComponents = useMDXComponents({})
+  const crumbs = buildCrumbsFromSlug(slug)
+
+  return (
+    <DocsPage
+      toc={page.data.toc}
+      full={page.data.full}
+      tableOfContent={{
+        style: 'clerk',
+        single: false,
+      }}
+    >
+      {/* Breadcrumb (subtle, Railway-style) */}
+      {crumbs.length > 0 && <PageBreadcrumb crumbs={crumbs} />}
+
+      <DocsTitle>{page.data.title}</DocsTitle>
+
+      {page.data.description ? (
+        <DocsDescription>{page.data.description}</DocsDescription>
+      ) : null}
+
+      <DocsBody>
+        <MDX components={mdxComponents} />
+      </DocsBody>
+
+      {/* Minimal footer — inspired by Railway's understated edit-link */}
+      <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-fd-border/40 pt-6 text-xs text-fd-muted-foreground/70">
+        <FeedbackLink title={page.data.title} />
+        <span>Last updated · Apr 2026</span>
+      </div>
+    </DocsPage>
+  )
+}
+
+export function generateStaticParams() {
+  return source.generateParams()
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params
+  const page = source.getPage(slug)
+  if (!page) return {}
+
+  return {
+    title: page.data.title,
+    description: page.data.description,
+  }
+}
+
+
+
+================================================
+FILE: src/app/docs/layout.tsx
+Lines: 41
+================================================
+
+import { DocsLayout } from 'fumadocs-ui/layouts/docs'
+import { baseOptions } from '@/app/layout.config'
+import { source } from '@/lib/source'
+import { SidebarFooter } from '@/components/docs/sidebar-footer'
+import type { ReactNode } from 'react'
+
+// ============================================================
+// DOCS LAYOUT — using 'docs' layout (NOT 'notebook')
+//
+// WHY NOT NOTEBOOK:
+// Fumadocs 'notebook' layout is opinionated — its sidebar cannot
+// be replaced and `sidebar.footer` prop is effectively ignored.
+// That's why <SidebarFooter /> didn't render before.
+//
+// The 'docs' layout fully supports `sidebar.footer`.
+//
+// HEADER:
+// Still minimal — themeSwitch disabled + links[]=[] means top nav
+// only shows Logo + Search. Contact + Theme toggle live in the
+// sidebar footer below.
+//
+// NOTE: `key="sidebar-footer"` on <SidebarFooter /> avoids a
+// React "missing key" warning because Fumadocs renders footer
+// inside a children array internally.
+// ============================================================
+
+export default function Layout({ children }: { children: ReactNode }) {
+  return (
+    <DocsLayout
+      tree={source.pageTree}
+      {...baseOptions}
+      links={[]}
+      themeSwitch={{ enabled: false }}
+      sidebar={{
+        footer: <SidebarFooter key="sidebar-footer" />,
+      }}
+    >
+      {children}
+    </DocsLayout>
+  )
+}
+
+
+
+================================================
+FILE: src/app/globals.css
+Lines: 492
+================================================
+
+/* ============================================================
+   TAILWIND v4 + FUMADOCS
+   ============================================================ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import 'fumadocs-ui/style.css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   DESIGN TOKENS — dark-first, OKLCH
+   ============================================================ */
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.098 0.005 264);
+  --foreground: oklch(0.96 0.005 264);
+
+  --card: oklch(0.138 0.007 264);
+  --card-foreground: oklch(0.96 0.005 264);
+
+  --primary: oklch(0.696 0.17 162);
+  --primary-foreground: oklch(0.1 0.01 162);
+
+  --secondary: oklch(0.185 0.008 264);
+  --secondary-foreground: oklch(0.82 0.005 264);
+
+  --muted: oklch(0.168 0.007 264);
+  --muted-foreground: oklch(0.58 0.008 264);
+
+  --accent: oklch(0.2 0.012 162);
+  --accent-foreground: oklch(0.696 0.17 162);
+
+  --destructive: oklch(0.56 0.22 27);
+  --destructive-foreground: oklch(0.97 0.01 27);
+
+  --border: oklch(0.22 0.008 264);
+  --input: oklch(0.18 0.008 264);
+  --ring: oklch(0.696 0.17 162);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  /* Fumadocs layout width vars — force full viewport */
+  --fd-layout-width: 100vw;
+  --fd-nav-width: 100vw;
+  --fd-sidebar-width: 260px;
+  --fd-toc-width: 260px;
+}
+
+.light {
+  --background: oklch(0.995 0.001 264);
+  --foreground: oklch(0.14 0.01 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.14 0.01 264);
+  --primary: oklch(0.56 0.17 162);
+  --primary-foreground: oklch(0.99 0.002 264);
+  --secondary: oklch(0.96 0.005 162);
+  --secondary-foreground: oklch(0.32 0.1 162);
+  --muted: oklch(0.97 0.003 264);
+  --muted-foreground: oklch(0.52 0.008 264);
+  --accent: oklch(0.95 0.008 162);
+  --accent-foreground: oklch(0.32 0.12 162);
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.92 0.004 264);
+  --input: oklch(0.95 0.004 264);
+  --ring: oklch(0.56 0.17 162);
+}
+
+@theme inline {
+  --color-background:             var(--background);
+  --color-foreground:             var(--foreground);
+  --color-card:                   var(--card);
+  --color-card-foreground:        var(--card-foreground);
+  --color-primary:                var(--primary);
+  --color-primary-foreground:     var(--primary-foreground);
+  --color-secondary:              var(--secondary);
+  --color-secondary-foreground:   var(--secondary-foreground);
+  --color-muted:                  var(--muted);
+  --color-muted-foreground:       var(--muted-foreground);
+  --color-accent:                 var(--accent);
+  --color-accent-foreground:      var(--accent-foreground);
+  --color-destructive:            var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border:                 var(--border);
+  --color-input:                  var(--input);
+  --color-ring:                   var(--ring);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans:  var(--font-sans);
+  --font-mono:  var(--font-mono);
+  --font-serif: var(--font-serif);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+@layer base {
+  html {
+    height: 100%;
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  * {
+    border-color: var(--border);
+  }
+}
+
+/* ============================================================
+   FULL-WIDTH LAYOUT — NUCLEAR OPTION
+   Force edge-to-edge layout (no container max-width anywhere)
+   ============================================================ */
+
+/* Kill ALL Fumadocs container constraints */
+.max-w-fd-container,
+.max-w-container,
+[class*="max-w-fd"],
+[class*="nd-container"] {
+  max-width: 100% !important;
+}
+
+/* Kill Tailwind .container utility max-width */
+.container {
+  max-width: 100% !important;
+}
+
+/* Layout root — full viewport */
+#nd-docs-layout,
+#nd-nav,
+[data-fumadocs-layout],
+main:has(aside),
+main:has([data-fumadocs-sidebar]) {
+  max-width: 100vw !important;
+  width: 100%;
+}
+
+/* HEADER — full width, edge-to-edge */
+header,
+header[data-fumadocs-nav],
+nav[data-fumadocs-nav],
+#nd-nav {
+  width: 100vw !important;
+  max-width: 100vw !important;
+}
+
+/* Header inner container — no max-width, just reasonable padding */
+header > div,
+header > nav,
+#nd-nav > *,
+nav[data-fumadocs-nav] > *:first-child {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  box-sizing: border-box;
+}
+
+/* ============================================================
+   NAV — glass blur, border bottom
+   ============================================================ */
+header[data-fumadocs-nav],
+nav[data-fumadocs-nav],
+#nd-nav {
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  background-color: color-mix(in oklch, var(--background) 80%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  z-index: 40;
+}
+
+/* ============================================================
+   HIDE THEME TOGGLE IN DOCS TOP NAV (moved to sidebar footer)
+   Fallback if `themeSwitch.enabled: false` prop doesn't work
+   Scoped: only docs pages that have sidebar
+   ============================================================ */
+body:has(aside[data-fumadocs-sidebar]) #nd-nav [aria-label*="theme" i],
+body:has(aside[data-fumadocs-sidebar]) header [aria-label*="theme" i],
+body:has(aside[data-fumadocs-sidebar]) #nd-nav [aria-label*="toggle" i]:has(svg),
+body:has(aside[data-fumadocs-sidebar]) header [aria-label*="toggle" i]:has(svg) {
+  display: none !important;
+}
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
+
+/* Ensure sidebar is a flex column so footer (mt-auto) pins to bottom */
+aside[data-fumadocs-sidebar],
+aside:has(> [data-fumadocs-sidebar-viewport]) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Make sidebar tree viewport fill available space so footer pushes down */
+aside [data-fumadocs-sidebar-viewport],
+aside > div:has(ul) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Separator labels ("---Features---") → uppercase section */
+aside li:has(> span:only-child:not(:empty)),
+aside [data-separator] {
+  margin-top: 1.5rem;
+  margin-bottom: 0.25rem;
+  padding-left: 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  pointer-events: none;
+}
+
+aside a[href] {
+  border-radius: 0.375rem;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+aside a[href]:hover {
+  background-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  color: var(--foreground);
+}
+
+aside a[aria-current='page'],
+aside a[data-active='true'] {
+  color: var(--primary);
+  background-color: color-mix(in oklch, var(--primary) 8%, transparent);
+  font-weight: 600;
+}
+
+/* ============================================================
+   TOC
+   ============================================================ */
+[data-toc] {
+  position: relative;
+  padding-left: 0.5rem;
+}
+
+[data-toc]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: color-mix(in oklch, var(--border) 70%, transparent);
+}
+
+[data-toc] a {
+  position: relative;
+  display: block;
+  padding: 0.3rem 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+  transition: color 120ms ease;
+}
+
+[data-toc] a:hover {
+  color: var(--foreground);
+}
+
+[data-toc] a[data-active='true'] {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+[data-toc] a[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: -0.5rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 2px;
+  background-color: var(--primary);
+  border-radius: 1px;
+}
+
+/* ============================================================
+   ARTICLE TYPOGRAPHY
+   ============================================================ */
+article,
+.nd-prose {
+  font-size: 0.9375rem;
+  line-height: 1.72;
+}
+
+article h1,
+.nd-prose h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--foreground);
+}
+
+article h2,
+.nd-prose h2 {
+  margin-top: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  scroll-margin-top: 5rem;
+  color: var(--foreground);
+}
+
+article h3,
+.nd-prose h3 {
+  margin-top: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  scroll-margin-top: 5rem;
+  color: var(--foreground);
+}
+
+article p,
+.nd-prose p {
+  color: color-mix(in oklch, var(--foreground) 92%, transparent);
+}
+
+/* ============================================================
+   CODE BLOCKS — single-box (figure=outer, pre=transparent)
+   ============================================================ */
+article figure,
+.nd-prose figure,
+figure[data-rehype-pretty-code-figure] {
+  margin: 1.5rem 0 !important;
+  border: 1px solid color-mix(in oklch, var(--border) 55%, transparent) !important;
+  background-color: color-mix(in oklch, var(--card) 65%, var(--background) 35%) !important;
+  border-radius: 0.625rem !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+article figure pre,
+.nd-prose figure pre,
+figure[data-rehype-pretty-code-figure] pre {
+  margin: 0 !important;
+  padding: 0.875rem 1rem !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+article > pre,
+.nd-prose > pre {
+  margin: 1.5rem 0;
+  border: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  background-color: color-mix(in oklch, var(--card) 65%, var(--background) 35%);
+  border-radius: 0.625rem;
+  padding: 0.875rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+
+article :not(pre) > code,
+.nd-prose :not(pre) > code {
+  border: none !important;
+}
+
+article figure [data-copy],
+figure[data-rehype-pretty-code-figure] [data-copy] {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+article figure:hover [data-copy],
+figure[data-rehype-pretty-code-figure]:hover [data-copy] {
+  opacity: 0.7;
+}
+
+article figure [data-copy]:hover,
+figure[data-rehype-pretty-code-figure] [data-copy]:hover {
+  opacity: 1;
+}
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+article table,
+.nd-prose table {
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  font-size: 0.875rem;
+}
+
+article thead,
+.nd-prose thead {
+  background-color: color-mix(in oklch, var(--card) 60%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+}
+
+article th,
+.nd-prose th {
+  padding: 0.625rem 0.875rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+article td,
+.nd-prose td {
+  padding: 0.625rem 0.875rem;
+  border-top: 1px solid color-mix(in oklch, var(--border) 40%, transparent);
+  vertical-align: top;
+}
+
+/* ============================================================
+   SEARCH BUTTON
+   ============================================================ */
+[data-fumadocs-search-button],
+button[aria-label*='Search' i] {
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent) !important;
+  background-color: color-mix(in oklch, var(--card) 60%, transparent) !important;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+[data-fumadocs-search-button]:hover,
+button[aria-label*='Search' i]:hover {
+  border-color: var(--border) !important;
+  background-color: var(--card) !important;
+}
+
+/* ============================================================
+   PAGER
+   ============================================================ */
+nav[aria-label='Pagination'],
+[data-fumadocs-pager] {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid color-mix(in oklch, var(--border) 50%, transparent);
+}
+
+nav[aria-label='Pagination'] a,
+[data-fumadocs-pager] a {
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+nav[aria-label='Pagination'] a:hover,
+[data-fumadocs-pager] a:hover {
+  border-color: var(--border);
+  background-color: color-mix(in oklch, var(--accent) 25%, transparent);
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--border) 70%, transparent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+}
+
+
+
+================================================
+FILE: src/app/layout.config.tsx
+Lines: 40
+================================================
+
+import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared'
+import { ArrowUpRight } from 'lucide-react'
+
+// ============================================================
+// SHARED LAYOUT CONFIG — header for both home and docs
+// Header structure in notebook layout:
+//   [Logo]  [Search ⌘K]        [Contact ↗] [🌙 theme]
+// ============================================================
+
+const CONTACT_URL = 'https://x.com/fibidy42581'
+
+export const baseOptions: BaseLayoutProps = {
+  nav: {
+    title: (
+      <div className="flex items-center gap-2">
+        <div className="h-6 w-6 rounded-[5px] bg-primary flex items-center justify-center shrink-0 shadow-sm">
+          <span className="text-primary-foreground text-[11px] font-bold leading-none">
+            B
+          </span>
+        </div>
+        <span className="font-semibold text-fd-foreground tracking-tight">
+          Boilerplate
+        </span>
+      </div>
+    ),
+    url: '/',
+  },
+  links: [
+    {
+      text: (
+        <span className="inline-flex items-center gap-1 text-sm font-medium">
+          Contact
+          <ArrowUpRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
+        </span>
+      ),
+      url: CONTACT_URL,
+      external: true,
+    },
+  ],
+}
+
+
+
+================================================
+FILE: src/app/layout.tsx
+Lines: 64
+================================================
+
+import type { ReactNode } from 'react'
+import type { Metadata } from 'next'
+import { Plus_Jakarta_Sans, JetBrains_Mono, Playfair_Display } from 'next/font/google'
+import { RootProvider } from 'fumadocs-ui/provider/next'
+import './globals.css'
+
+// ============================================================
+// FONTS — next/font is self-hosted + CLS-proof.
+// Don't @import Google Fonts in globals.css (that's a duplicate fetch).
+// ============================================================
+
+const fontSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  weight: ['300', '400', '500', '600', '700', '800'],
+})
+
+const fontMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  weight: ['400', '500', '700'],
+})
+
+const fontSerif = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-serif',
+  weight: ['400', '500', '600', '700', '800', '900'],
+})
+
+// ============================================================
+// METADATA
+// ============================================================
+
+export const metadata: Metadata = {
+  title: {
+    default: 'Boilerplate Docs',
+    template: '%s · Boilerplate Docs',
+  },
+  description:
+    'Full-stack Next.js 16 + Supabase boilerplate — config-driven, module-based, production-ready.',
+  icons: { icon: '/favicon.ico' },
+}
+
+// ============================================================
+// ROOT LAYOUT
+// RootProvider (from fumadocs-ui/provider/next) handles theme
+// (next-themes internally) + search context. No need to wrap
+// another ThemeProvider.
+// ============================================================
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html
+      lang="en"
+      className={`${fontSans.variable} ${fontMono.variable} ${fontSerif.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="flex flex-col min-h-screen">
+        <RootProvider>
+          {children}
+        </RootProvider>
+      </body>
+    </html>
+  )
+}
+
+
+================================================
+FILE: src/app/opengraph-image.tsx
+Lines: 62
+================================================
+
+import { ImageResponse } from 'next/og'
+
+// ============================================================
+// DEFAULT OPEN GRAPH IMAGE
+// Used for social sharing previews
+// ============================================================
+
+export const runtime = 'edge'
+export const alt = 'Next.js + Supabase Boilerplate Documentation'
+export const size = { width: 1200, height: 630 }
+export const contentType = 'image/png'
+
+export default function Image() {
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          background: '#0a0a0f',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'sans-serif',
+          padding: 40,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 84,
+            fontWeight: 800,
+            color: '#1fd9a0',
+            letterSpacing: -2,
+          }}
+        >
+          Boilerplate
+        </div>
+        <div
+          style={{
+            fontSize: 34,
+            color: '#f0f0f5',
+            marginTop: 16,
+            textAlign: 'center',
+            fontWeight: 600,
+          }}
+        >
+          Next.js + Supabase · Production-Ready
+        </div>
+        <div
+          style={{
+            fontSize: 22,
+            color: '#9ca3af',
+            marginTop: 28,
+          }}
+        >
+          Config-driven · Module-based · Open source
+        </div>
+      </div>
+    ),
+    { ...size }
+  )
+}
+
+
+================================================
+FILE: src/app/page.tsx
+Lines: 220
+================================================
+
+import Link from 'next/link'
+
+// ============================================================
+// LANDING PAGE
+// Public-facing docs homepage — aligned with actual boilerplate
+// (Next.js 16 + Supabase, config-driven, module-based)
+// ============================================================
+
+const TECH_STACK = [
+  { label: 'Next.js 16', color: 'text-fd-foreground' },
+  { label: 'React 19', color: 'text-blue-400' },
+  { label: 'TypeScript', color: 'text-blue-300' },
+  { label: 'Supabase', color: 'text-primary' },
+  { label: 'Tailwind v4', color: 'text-cyan-400' },
+  { label: 'shadcn/ui', color: 'text-fd-foreground' },
+  { label: 'Zustand', color: 'text-yellow-400' },
+]
+
+const FEATURES = [
+  {
+    icon: '⚙️',
+    title: 'Config-Driven',
+    description:
+      'Semua behavior dikontrol dari src/config/. Ganti config = ganti behavior, zero code change.',
+  },
+  {
+    icon: '🧩',
+    title: 'Module System',
+    description:
+      '8 module toggleable — admin, saas, landing, commerce, blog, project, forum, chat.',
+  },
+  {
+    icon: '🔐',
+    title: 'Authentication',
+    description:
+      'Email/password, Google OAuth, magic link. Built on Supabase Auth + SSR-friendly.',
+  },
+  {
+    icon: '🛡️',
+    title: 'RBAC + Wildcard',
+    description:
+      'Permission matrix dengan wildcard ("users:*"). Pure function, dipake di client/server/edge.',
+  },
+  {
+    icon: '🌐',
+    title: 'i18n Built-in',
+    description:
+      'Type-safe translation, zero runtime dependency. id + en out of the box.',
+  },
+  {
+    icon: '🎨',
+    title: 'Branding via Env',
+    description:
+      'Ganti nama, logo, warna, meta — semua dari .env tanpa sentuh code.',
+  },
+]
+
+const QUICK_LINKS = [
+  {
+    href: '/docs',
+    title: 'Introduction',
+    description: 'Apa itu boilerplate ini dan apa yang udah ada di dalemnya.',
+    icon: '📖',
+  },
+  {
+    href: '/docs/tech-stack',
+    title: 'Tech Stack',
+    description: 'Alasan setiap keputusan teknologi.',
+    icon: '🧱',
+  },
+  {
+    href: '/docs/setup/project',
+    title: 'Getting Started',
+    description: 'Install, konfigurasi env, jalan di localhost dalam 10 menit.',
+    icon: '🚀',
+  },
+  {
+    href: '/docs/authentication/overview',
+    title: 'Authentication',
+    description: 'Flow auth end-to-end, provider, session, role-based redirect.',
+    icon: '🔑',
+  },
+  {
+    href: '/docs/database/overview',
+    title: 'Database',
+    description: 'Supabase Postgres + RLS, 3 client variant, type-safe generated.',
+    icon: '🗄️',
+  },
+  {
+    href: '/docs/working-with-the-codebase/production-builds',
+    title: 'Deployment',
+    description: 'Vercel, Netlify, Docker — production build + checklist.',
+    icon: '⚡',
+  },
+]
+
+export default function HomePage() {
+  return (
+    <main className="min-h-screen">
+
+      {/* ── HERO ── */}
+      <section className="flex flex-col items-center justify-center px-6 pt-20 pb-16 text-center">
+        {/* Status badge */}
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-fd-border bg-fd-card px-4 py-1.5 text-xs font-medium text-fd-muted-foreground">
+          <span className="size-1.5 rounded-full bg-primary animate-pulse inline-block" />
+          Production-ready · Config-driven · Open source
+        </div>
+
+        <h1 className="font-sans text-5xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">
+          <span className="text-primary">Next.js</span>{' '}
+          <span className="text-fd-foreground">+ Supabase</span>
+          <br />
+          <span className="text-fd-foreground">Boilerplate</span>
+        </h1>
+
+        <p className="mt-6 max-w-2xl text-lg text-fd-muted-foreground leading-relaxed">
+          Full-stack starter yang udah jadi — auth, RBAC, dashboard, i18n, dan
+          module system. Ganti{' '}
+          <code className="font-mono text-fd-foreground px-1 rounded bg-fd-accent">
+            .env
+          </code>{' '}
+          + logo, aplikasi lo siap jalan. Zero boilerplate yang harus ditulis ulang.
+        </p>
+
+        {/* Tech stack pills */}
+        <div className="mt-8 flex flex-wrap justify-center gap-2">
+          {TECH_STACK.map((tech) => (
+            <span
+              key={tech.label}
+              className={`rounded-md border border-fd-border bg-fd-card px-3 py-1 font-mono text-xs font-medium ${tech.color}`}
+            >
+              {tech.label}
+            </span>
+          ))}
+        </div>
+
+        {/* CTAs */}
+        <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <Link
+            href="/docs"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Read the Docs
+            <span aria-hidden>→</span>
+          </Link>
+          <Link
+            href="/docs/setup/project"
+            className="inline-flex items-center gap-2 rounded-lg border border-fd-border bg-fd-card px-6 py-3 text-sm font-semibold text-fd-foreground transition-colors hover:bg-fd-accent"
+          >
+            Quick Start
+            <span aria-hidden>↗</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* ── FEATURES GRID ── */}
+      <section className="mx-auto max-w-5xl px-6 pb-16">
+        <h2 className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-fd-muted-foreground">
+          What's Included
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {FEATURES.map((f) => (
+            <div
+              key={f.title}
+              className="flex flex-col gap-3 rounded-xl border border-fd-border bg-fd-card p-6"
+            >
+              <span className="text-2xl">{f.icon}</span>
+              <div>
+                <p className="font-semibold text-fd-foreground">{f.title}</p>
+                <p className="mt-1 text-sm text-fd-muted-foreground">
+                  {f.description}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── QUICK LINKS ── */}
+      <section className="mx-auto max-w-5xl px-6 pb-24">
+        <h2 className="mb-8 text-center text-sm font-semibold uppercase tracking-widest text-fd-muted-foreground">
+          Documentation
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {QUICK_LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="group flex flex-col gap-3 rounded-xl border border-fd-border bg-fd-card p-6 transition-colors hover:border-primary/50 hover:bg-fd-accent"
+            >
+              <span className="text-2xl">{link.icon}</span>
+              <div>
+                <p className="font-semibold text-fd-foreground group-hover:text-primary transition-colors">
+                  {link.title}
+                </p>
+                <p className="mt-1 text-sm text-fd-muted-foreground">
+                  {link.description}
+                </p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer className="border-t border-fd-border py-8 text-center text-xs text-fd-muted-foreground">
+        <p>
+          Boilerplate Docs · Open Source ·{' '}
+          <a
+            href="https://github.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-primary transition-colors"
+          >
+            GitHub ↗
+          </a>
+        </p>
+      </footer>
+    </main>
+  )
+}
+
+
+================================================
+FILE: src/app/twitter-image.tsx
+Lines: 62
+================================================
+
+import { ImageResponse } from 'next/og'
+
+// ============================================================
+// DEFAULT TWITTER IMAGE
+// Reuses the same visual as OG for consistent social previews
+// ============================================================
+
+export const runtime = 'edge'
+export const alt = 'Next.js + Supabase Boilerplate Documentation'
+export const size = { width: 1200, height: 630 }
+export const contentType = 'image/png'
+
+export default function Image() {
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          background: '#0a0a0f',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'sans-serif',
+          padding: 40,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 84,
+            fontWeight: 800,
+            color: '#1fd9a0',
+            letterSpacing: -2,
+          }}
+        >
+          Boilerplate
+        </div>
+        <div
+          style={{
+            fontSize: 34,
+            color: '#f0f0f5',
+            marginTop: 16,
+            textAlign: 'center',
+            fontWeight: 600,
+          }}
+        >
+          Next.js + Supabase · Production-Ready
+        </div>
+        <div
+          style={{
+            fontSize: 22,
+            color: '#9ca3af',
+            marginTop: 28,
+          }}
+        >
+          Config-driven · Module-based · Open source
+        </div>
+      </div>
+    ),
+    { ...size }
+  )
+}
+
+
+################################################################
+##  src/components/ (excl. ui/)
+################################################################
+
+
+================================================
+FILE: src/components/docs/callout.tsx
+Lines: 54
+================================================
+
+import type { ReactNode } from 'react'
+import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Lightbulb, Lock } from 'lucide-react'
+import { cn } from '@/lib/shared/utils'
+
+// ============================================================
+// CALLOUT — Railway-minimal editorial style
+// Single left border (no bg flood), tight vertical rhythm
+// Usage in MDX: <Callout type="warning">...</Callout>
+// ============================================================
+
+type CalloutType = 'info' | 'warning' | 'danger' | 'success' | 'tip' | 'secure'
+
+interface CalloutProps {
+  type?: CalloutType
+  title?: string
+  children: ReactNode
+}
+
+const VARIANT = {
+  info:    { Icon: Info,          border: 'border-l-blue-400/70',    icon: 'text-blue-400',    title: 'Info' },
+  warning: { Icon: AlertTriangle, border: 'border-l-amber-400/70',   icon: 'text-amber-400',   title: 'Warning' },
+  danger:  { Icon: AlertOctagon,  border: 'border-l-red-400/70',     icon: 'text-red-400',     title: 'Danger' },
+  success: { Icon: CheckCircle2,  border: 'border-l-emerald-400/70', icon: 'text-emerald-400', title: 'Success' },
+  tip:     { Icon: Lightbulb,     border: 'border-l-purple-400/70',  icon: 'text-purple-400',  title: 'Tip' },
+  secure:  { Icon: Lock,          border: 'border-l-rose-400/70',    icon: 'text-rose-400',    title: 'Security' },
+} as const
+
+export function Callout({ type = 'info', title, children }: CalloutProps) {
+  const v = VARIANT[type]
+  const { Icon } = v
+  const resolvedTitle = title ?? v.title
+
+  return (
+    <div
+      className={cn(
+        'my-6 flex gap-3 border-l-2 pl-4 py-1',
+        v.border,
+      )}
+      role="note"
+    >
+      <Icon className={cn('mt-1 h-4 w-4 shrink-0', v.icon)} aria-hidden />
+      <div className="flex-1 min-w-0">
+        {resolvedTitle ? (
+          <p className="mb-1 text-sm font-semibold leading-tight text-fd-foreground">
+            {resolvedTitle}
+          </p>
+        ) : null}
+        <div className="text-sm leading-relaxed text-fd-muted-foreground [&>p]:m-0 [&>p+p]:mt-2 [&_code]:rounded [&_code]:bg-fd-accent/60 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.85em] [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-fd-foreground">
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+
+================================================
+FILE: src/components/docs/cta-next.tsx
+Lines: 36
+================================================
+
+import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
+
+// ============================================================
+// CTA NEXT — minimal inline CTA at end of page
+// Railway-style: just a link row, not a loud card
+// Usage:
+//   <CtaNext href="/docs/setup/resend">Set up transactional email</CtaNext>
+// ============================================================
+
+interface CtaNextProps {
+  href: string
+  children: React.ReactNode
+}
+
+export function CtaNext({ href, children }: CtaNextProps) {
+  return (
+    <Link
+      href={href}
+      className="group mt-10 flex items-center justify-between gap-4 rounded-md border border-fd-border/60 px-4 py-3.5 text-sm transition-colors hover:border-fd-border hover:bg-fd-accent/30"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-fd-muted-foreground/70">
+          Next
+        </div>
+        <div className="mt-0.5 font-medium text-fd-foreground">
+          {children}
+        </div>
+      </div>
+      <ArrowRight
+        className="h-4 w-4 shrink-0 text-fd-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-fd-foreground"
+        aria-hidden
+      />
+    </Link>
+  )
+}
+
+
+
+================================================
+FILE: src/components/docs/feedback-link.tsx
+Lines: 33
+================================================
+
+// ============================================================
+// FEEDBACK LINK — simple text link to X
+// Railway-style: no icon noise, just text
+// ============================================================
+
+const CONTACT_URL = 'https://x.com/fibidy42581'
+
+interface FeedbackLinkProps {
+  title: string
+}
+
+export function FeedbackLink({ title }: FeedbackLinkProps) {
+  // Pre-fill X DM composer if supported, else just open profile
+  const dmUrl = `${CONTACT_URL}`
+
+  return (
+    <a
+      href={dmUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group inline-flex items-center gap-1.5 transition-colors hover:text-fd-foreground"
+      title={`Feedback for: ${title}`}
+    >
+      <span>Found an issue? DM on X</span>
+      <span
+        aria-hidden
+        className="opacity-70 transition-transform group-hover:translate-x-0.5"
+      >
+        ↗
+      </span>
+    </a>
+  )
+}
+
+
+
+================================================
+FILE: src/components/docs/page-breadcrumb.tsx
+Lines: 82
+================================================
+
+import Link from 'next/link'
+
+// ============================================================
+// PAGE BREADCRUMB — Railway-minimal text breadcrumb
+// "Home > Section > Subsection"
+// Plain text, primary color on hover
+// ============================================================
+
+interface Crumb {
+  label: string
+  href?: string
+}
+
+interface PageBreadcrumbProps {
+  crumbs: Crumb[]
+}
+
+export function PageBreadcrumb({ crumbs }: PageBreadcrumbProps) {
+  if (crumbs.length === 0) return null
+
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      className="mb-4 flex items-center gap-2 text-sm text-fd-muted-foreground"
+    >
+      <Link
+        href="/docs"
+        className="transition-colors hover:text-fd-foreground"
+      >
+        Home
+      </Link>
+
+      {crumbs.map((crumb, idx) => (
+        <span key={idx} className="flex items-center gap-2">
+          <span className="text-fd-muted-foreground/40" aria-hidden>
+            &gt;
+          </span>
+          {crumb.href ? (
+            <Link
+              href={crumb.href}
+              className="transition-colors hover:text-fd-foreground"
+            >
+              {crumb.label}
+            </Link>
+          ) : (
+            <span>{crumb.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+// Build crumbs from slug segments (excluding last — which becomes H1)
+// Input:  ["setup", "project"]
+// Output: [{label: "Setup", href: "/docs/setup"}]
+export function buildCrumbsFromSlug(slug: string[] | undefined): Crumb[] {
+  if (!slug || slug.length === 0) return []
+
+  const segments = slug.slice(0, -1)
+  if (segments.length === 0) return []
+
+  const crumbs: Crumb[] = []
+  let accumulated = '/docs'
+
+  segments.forEach((seg) => {
+    accumulated += `/${seg}`
+    crumbs.push({
+      label: formatSegment(seg),
+      href: accumulated,
+    })
+  })
+
+  return crumbs
+}
+
+function formatSegment(seg: string): string {
+  return seg
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+
+
+================================================
+FILE: src/components/docs/sidebar-footer.tsx
+Lines: 56
+================================================
+
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useTheme } from 'next-themes'
+import { ArrowUpRight, Sun, Moon } from 'lucide-react'
+
+// ============================================================
+// SIDEBAR FOOTER
+// Contact link (left) + theme toggle (right)
+// Pinned at bottom of sidebar via sidebar.footer prop
+// ============================================================
+
+const CONTACT_URL = 'https://x.com/fibidy42581'
+
+export function SidebarFooter() {
+  const { setTheme, resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch — theme is only known client-side
+  useEffect(() => setMounted(true), [])
+
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+  }
+
+  return (
+    <div className="mt-auto flex items-center justify-between gap-3 border-t border-fd-border/50 px-3 py-3">
+      {/* Contact link */}
+      <a
+        href={CONTACT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-fd-muted-foreground transition-colors hover:text-fd-foreground"
+      >
+        Contact
+        <ArrowUpRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
+      </a>
+
+      {/* Theme toggle */}
+      {mounted && (
+        <button
+          type="button"
+          onClick={toggleTheme}
+          aria-label="Toggle theme"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-fd-border/60 bg-fd-card/40 text-fd-muted-foreground transition-colors hover:bg-fd-accent/40 hover:text-fd-foreground"
+        >
+          {resolvedTheme === 'dark' ? (
+            <Sun className="h-3.5 w-3.5" />
+          ) : (
+            <Moon className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
+    </div>
+  )
+}
+
+
+
+################################################################
+##  src/hooks/
+################################################################
+
+
+================================================
+FILE: src/hooks/shared/index.ts
+Lines: 1
+================================================
+
+export * from './use-media-query'
+
+
+
+================================================
+FILE: src/hooks/shared/use-media-query.ts
+Lines: 41
+================================================
+
+'use client'
+
+import { useEffect, useState } from 'react'
+
+/**
+ * useMediaQuery — reactive CSS media query hook
+ * Used by SidebarProvider to detect mobile breakpoint
+ *
+ * @param query - CSS media query string e.g. "(max-width: 767px)"
+ * @returns boolean — true if the query matches
+ *
+ * @example
+ * const isMobile = useMediaQuery("(max-width: 767px)")
+ */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState<boolean>(false)
+
+  useEffect(() => {
+    // SSR guard — window is not available on server
+    if (typeof window === 'undefined') return
+
+    const mediaQueryList = window.matchMedia(query)
+
+    // Set initial value
+    setMatches(mediaQueryList.matches)
+
+    // Update on change
+    const listener = (event: MediaQueryListEvent) => {
+      setMatches(event.matches)
+    }
+
+    // Modern API
+    mediaQueryList.addEventListener('change', listener)
+
+    return () => {
+      mediaQueryList.removeEventListener('change', listener)
+    }
+  }, [query])
+
+  return matches
+}
+
+
+
+################################################################
+##  src/lib/
+################################################################
+
+
+================================================
+FILE: src/lib/shared/cloudinary.ts
+Lines: 80
+================================================
+
+/**
+ * Cloudinary utility — used by OptimizedImage component
+ * Detects whether a src string is a Cloudinary public_id or an external URL
+ */
+
+type ImageSourceType = 'cloudinary' | 'external' | 'none'
+
+interface ImageSource {
+  type: ImageSourceType
+  src: string | null
+}
+
+const CLOUDINARY_CLOUD_NAME =
+  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? ''
+
+/**
+ * Detect image source type:
+ * - 'cloudinary' → raw public_id (no http, no slash-start)
+ * - 'external'   → full URL (http/https)
+ * - 'none'       → empty / null / undefined
+ */
+export function getImageSource(src: string | undefined | null): ImageSource {
+  if (!src || src.trim() === '') {
+    return { type: 'none', src: null }
+  }
+
+  // Full URL → external
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    return { type: 'external', src }
+  }
+
+  // data URI → external
+  if (src.startsWith('data:')) {
+    return { type: 'external', src }
+  }
+
+  // Everything else → treat as Cloudinary public_id
+  return { type: 'cloudinary', src }
+}
+
+/**
+ * Build a Cloudinary URL from a public_id (for non-CldImage use cases)
+ */
+export function buildCloudinaryUrl(
+  publicId: string,
+  options: {
+    width?: number
+    height?: number
+    crop?: string
+    quality?: number | 'auto'
+    format?: string
+  } = {}
+): string {
+  if (!CLOUDINARY_CLOUD_NAME) {
+    console.warn('[cloudinary] NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME is not set')
+    return ''
+  }
+
+  const { width, height, crop = 'fill', quality = 'auto', format = 'auto' } =
+    options
+
+  const transforms = [
+    `f_${format}`,
+    `q_${quality}`,
+    crop && `c_${crop}`,
+    width && `w_${width}`,
+    height && `h_${height}`,
+  ]
+    .filter(Boolean)
+    .join(',')
+
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/${transforms}/${publicId}`
+}
+
+/**
+ * Check if a string looks like a Cloudinary public_id
+ */
+export function isCloudinaryPublicId(src: string): boolean {
+  return getImageSource(src).type === 'cloudinary'
+}
+
+
+
+================================================
+FILE: src/lib/shared/index.ts
+Lines: 2
+================================================
+
+export * from './utils'
+export * from './cloudinary'
+
+
+
+================================================
+FILE: src/lib/shared/utils.ts
+Lines: 6
+================================================
+
+import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+
+
+
+================================================
+FILE: src/lib/source.ts
+Lines: 7
+================================================
+
+import { docs, meta } from '../../.source/server'
+import { toFumadocsSource } from 'fumadocs-mdx/runtime/server'
+import { loader } from 'fumadocs-core/source'
+
+export const source = loader({
+  baseUrl: '/docs',
+  source: toFumadocsSource(docs, meta),
+})
+
+
+################################################################
+##  src/providers/
+################################################################
+
+
+================================================
+FILE: src/providers/index.tsx
+Lines: 17
+================================================
+
+'use client'
+
+import { ThemeProvider } from './theme-provider'
+import { ToastProvider } from './toast-provider'
+
+interface ProvidersProps {
+  children: React.ReactNode
+}
+
+export function Providers({ children }: ProvidersProps) {
+  return (
+    <ThemeProvider>
+      {children}
+      <ToastProvider />
+    </ThemeProvider>
+  )
+}
+
+
+
+================================================
+FILE: src/providers/theme-provider.tsx
+Lines: 18
+================================================
+
+'use client'
+
+import { ThemeProvider as NextThemesProvider } from 'next-themes'
+import type { ThemeProviderProps } from 'next-themes'
+
+export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
+  return (
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="dark"
+      enableSystem
+      disableTransitionOnChange
+      {...props}
+    >
+      {children}
+    </NextThemesProvider>
+  )
+}
+
+
+
+================================================
+FILE: src/providers/toast-provider.tsx
+Lines: 14
+================================================
+
+'use client'
+
+import { Toaster } from '@/components/ui/sonner'
+
+export function ToastProvider() {
+  return (
+    <Toaster
+      position="top-center"
+      richColors
+      expand={false}
+      closeButton
+    />
+  )
+}
+
+
+
+################################################################
+##  src/ root (*.ts *.tsx)
+################################################################
+
+
+================================================
+FILE: src/mdx-components.tsx
+Lines: 55
+================================================
+
+import defaultMdxComponents from 'fumadocs-ui/mdx'
+import type { MDXComponents } from 'mdx/types'
+import { Callout } from '@/components/docs/callout'
+import { CtaNext } from '@/components/docs/cta-next'
+
+// ============================================================
+// MDX COMPONENTS
+// Minimal overrides — Railway-style
+// Let typography do the work; no decorative borders/gradients
+// ============================================================
+
+export function useMDXComponents(components: MDXComponents): MDXComponents {
+  return {
+    ...defaultMdxComponents,
+
+    // ── Custom MDX components (usable inline in .mdx) ──
+    Callout,
+    CtaNext,
+
+    // ── Inline code — minimal bg, no border ──
+    code: ({ className, ...props }) => (
+      <code
+        className={`rounded bg-fd-accent/50 px-[0.35em] py-[0.15em] text-[0.88em] font-mono text-fd-foreground ${className ?? ''}`}
+        {...props}
+      />
+    ),
+
+    // ── Links — primary with subtle underline ──
+    a: ({ className, ...props }) => (
+      <a
+        className={`text-primary underline decoration-primary/30 underline-offset-[3px] transition-colors hover:decoration-primary ${className ?? ''}`}
+        {...props}
+      />
+    ),
+
+    // ── Blockquote — simple left accent ──
+    blockquote: ({ className, ...props }) => (
+      <blockquote
+        className={`my-6 border-l-2 border-fd-muted-foreground/40 pl-4 text-fd-muted-foreground [&>p]:m-0 ${className ?? ''}`}
+        {...props}
+      />
+    ),
+
+    // ── Horizontal rule — thin, unobtrusive ──
+    hr: ({ className, ...props }) => (
+      <hr
+        className={`my-10 border-0 border-t border-fd-border/60 ${className ?? ''}`}
+        {...props}
+      />
+    ),
+
+    // ── User overrides last ──
+    ...components,
+  }
+}
+
+
+
+################################################################
+##  SUMMARY
+################################################################
+Found   : 26 / 26
+Missing : 0
+Coverage: 100%

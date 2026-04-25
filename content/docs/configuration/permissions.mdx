@@ -1,0 +1,313 @@
+---
+title: Permissions
+description: RBAC with wildcard support — `permissionMatrix` + `can()`
+---
+
+The boilerplate uses role-based access control (RBAC) with wildcard support. Permissions are defined in `permissionMatrix`, checked via `can(role, permission)`.
+
+## Matrix
+
+File: `src/config/permissions.config.ts`
+
+```ts
+export const permissionMatrix: Record<UserRole, readonly string[]> = {
+  super_admin: ["*"],
+  admin: [
+    "admin:access",
+    "users:*",
+    "content:*",
+    "profile:read",
+    "profile:write",
+  ],
+  editor: [
+    "content:read",
+    "content:write",
+    "content:publish",
+    "users:read",
+    "profile:read",
+    "profile:write",
+  ],
+  viewer: [
+    "content:read",
+    "users:read",
+    "profile:read",
+    "profile:write",
+  ],
+  user: [
+    "profile:read",
+    "profile:write",
+  ],
+} as const;
+```
+
+## Key Format
+
+Permission keys use dot-notation: `resource:action` or `resource:sub:action`.
+
+**Examples:**
+
+- `admin:access` — access the admin panel
+- `users:read` — read user data
+- `users:write` — edit user data
+- `commerce:orders:read` — read orders (sub-resource)
+- `commerce:orders:*` — all actions on commerce orders
+
+## Wildcard Semantics
+
+| Pattern | Matches |
+|---|---|
+| `"*"` | Match all permissions (super power) |
+| `"users:*"` | Matches `users:read`, `users:write`, `users:delete`, etc. |
+| `"commerce:orders:*"` | Matches `commerce:orders:read`, `commerce:orders:refund`, etc. |
+| `"users:read"` | Matches **exactly** `users:read` |
+
+Wildcards are only evaluated on the last segment. `"*:read"` **doesn't** work (only the global `"*"` can cross resources).
+
+## The `can()` Function
+
+Pure function, usable on client + server + edge:
+
+```ts
+import { can } from "@/core/auth/lib";
+
+can("admin", "users:read")       // true  (matches "users:*")
+can("admin", "billing:read")     // false (no "billing:*")
+can("super_admin", "any:thing")  // true  (matches "*")
+can("viewer", "content:write")   // false
+can(null, "profile:read")        // false (null role = no permission)
+```
+
+**Import path:**
+
+```ts
+import { can, canAll, canAny, canAccessAdmin } from "@/core/auth/lib";
+```
+
+### `canAll(role, permissions[])`
+
+Returns `true` if the role has **all** permissions in the array:
+
+```ts
+canAll("editor", ["content:read", "content:write"])  // true
+canAll("editor", ["content:read", "users:write"])    // false
+```
+
+### `canAny(role, permissions[])`
+
+Returns `true` if the role has **at least one** permission:
+
+```ts
+canAny("viewer", ["content:read", "users:write"])    // true (has content:read)
+canAny("user", ["content:read", "users:read"])       // false
+```
+
+### `canAccessAdmin(role)`
+
+Shortcut for `can(role, "admin:access")`:
+
+```ts
+canAccessAdmin("admin")         // true
+canAccessAdmin("editor")        // false
+```
+
+## Client Hooks
+
+Reactive to the current user's role:
+
+```tsx
+import { usePermission, usePermissions } from "@/core/auth/hooks";
+
+// Single permission check
+const canEdit = usePermission("users:write");
+
+if (!canEdit) return <Forbidden />;
+
+// Multiple checks — avoid calling usePermission repeatedly
+const check = usePermissions();
+const canEdit = check("users:write");
+const canDelete = check("users:delete");
+```
+
+## Server-Side Check
+
+In a Server Component / Route Handler:
+
+```ts
+import { createClient } from "@/core/lib/supabase/server";
+import { fetchActiveProfile } from "@/core/auth/services";
+import { can } from "@/core/auth/lib";
+import { notFound } from "next/navigation";
+
+export default async function AdminPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) notFound();
+
+  const { profile } = await fetchActiveProfile(supabase, user.id);
+
+  if (!can(profile?.role, "admin:access")) {
+    notFound();
+  }
+
+  return <div>Admin content</div>;
+}
+```
+
+## `useAuth()` Facade
+
+Combines auth state + permission check:
+
+```tsx
+import { useAuth } from "@/core/auth/hooks";
+
+function Component() {
+  const { user, can, canAccessAdmin } = useAuth();
+
+  return (
+    <>
+      {can("users:write") && <EditButton />}
+      {canAccessAdmin && <Link href="/admin">Admin</Link>}
+    </>
+  );
+}
+```
+
+## Adding a New Permission
+
+### Step 1: Add to the Matrix
+
+Edit `src/config/permissions.config.ts`:
+
+```ts
+admin: [
+  "admin:access",
+  "users:*",
+  "content:*",
+  "billing:read",      // ← add
+  "billing:refund",    // ← add
+  "profile:read",
+  "profile:write",
+],
+```
+
+Or use a wildcard:
+
+```ts
+admin: [
+  "admin:access",
+  "users:*",
+  "content:*",
+  "billing:*",         // ← covers all billing:* actions
+  "profile:read",
+  "profile:write",
+],
+```
+
+### Step 2: Use in Code
+
+```ts
+if (can(user.role, "billing:refund")) {
+  // render the refund button
+}
+```
+
+No DB migration needed — permissions are derived from the role, and the role is already a column.
+
+## Common Patterns
+
+### Component Gate
+
+```tsx
+function ProtectedContent() {
+  const canView = usePermission("admin:access");
+  if (!canView) return null;
+  return <AdminOnlyStuff />;
+}
+```
+
+### Route Gate (Client)
+
+Use a layout guard in the dashboard:
+
+```tsx
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/core/auth/hooks";
+
+export default function AdminLayout({ children }) {
+  const router = useRouter();
+  const { hasFetched, canAccessAdmin } = useAuth();
+
+  useEffect(() => {
+    if (hasFetched && !canAccessAdmin) {
+      router.push("/dashboard");
+    }
+  }, [hasFetched, canAccessAdmin, router]);
+
+  if (!hasFetched || !canAccessAdmin) {
+    return <Spinner />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+### Route Gate (Server — More Secure)
+
+Server-side check enforced before render:
+
+```ts
+// src/app/(dashboard)/admin/page.tsx
+import { createClient } from "@/core/lib/supabase/server";
+import { fetchActiveProfile } from "@/core/auth/services";
+import { canAccessAdmin } from "@/core/auth/lib";
+import { redirect } from "next/navigation";
+
+export default async function AdminPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { profile } = await fetchActiveProfile(supabase, user.id);
+  if (!canAccessAdmin(profile?.role)) redirect("/dashboard");
+
+  return <AdminDashboard />;
+}
+```
+
+**Preferred pattern for production** — client-side gates can be bypassed by disabling JS / manipulating React state. Server-side gates are enforced before HTML is sent.
+
+## RLS Is Complementary, Not a Replacement
+
+Permission checks in code **don't replace** RLS at the database layer.
+
+- **RLS** — enforced at the DB layer, bypass-proof (as long as you don't use the service role key)
+- **Permission check** — enforced at the app layer, for UX (hide button, redirect)
+
+Both layers are complementary:
+
+- RLS: users can't query data they don't own
+- Permission: users aren't shown UI they don't have access to
+
+If RLS is tight, permission checks are cosmetic. If permission checks are strict but RLS is loose, users can bypass via direct API calls.
+
+## Design Rationale
+
+**Why wildcards?** The boilerplate scales to many modules (commerce, admin, saas, etc.). Without wildcards, the admin role would need 50+ explicit permissions listed. Wildcards = concise + maintainable.
+
+**Why a pure function?** `can()` can be used in any context (client component, server component, middleware, test). Zero dependencies — no React, no Zustand needed.
+
+**Why strings, not enum?** Modularity. A new module can add permission keys without touching a core type. Trade-off: no typo detection. Mitigation: strict convention (`<resource>:<action>` format).
+
+## Path to ABAC (Future)
+
+If you later need attribute-based access control (e.g. "user X can edit post Y if user X is the author"):
+
+```ts
+// Potential future signature
+can(role, "posts:edit", { resourceOwnerId: post.author_id, userId: currentUser.id })
+```
+
+The current boilerplate doesn't support this. Extend it yourself — the pattern is additive, not breaking for existing `can()` calls.

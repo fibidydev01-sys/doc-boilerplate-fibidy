@@ -1,0 +1,174 @@
+---
+title: Customers
+description: Customer directory — aggregates data from orders & subscriptions
+---
+
+## Data Source
+
+Customers **ARE** stored in the DB, mirrored from LS via webhook. Every unique customer in LS has a row in `commerce_customers`.
+
+## Table Schema
+
+```sql
+CREATE TABLE commerce_customers (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider text NOT NULL DEFAULT 'lemonsqueezy',
+  provider_customer_id text NOT NULL,
+  email text,
+  name text,
+  city text,
+  region text,
+  country text,
+  total_revenue_currency numeric,    -- lifetime revenue (in currency minor units)
+  mrr numeric,                        -- monthly recurring revenue
+  status text,
+  -- subscribed | unsubscribed | archived | requires_verification |
+  -- invalid_email | bounced
+  metadata jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (provider, provider_customer_id)
+);
+```
+
+## Flow
+
+Customer data arrives from several sources:
+
+1. **`order_created` webhook** → if the customer is new, insert a row into `commerce_customers` + set email/name
+2. **`subscription_created` webhook** → same
+3. **Optional LS API sync** → fetch customer details (total_revenue, MRR) for aggregate stats
+
+## Endpoints
+
+### List — `GET /api/commerce/customers`
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `50` | Max rows returned |
+| `offset` | number | `0` | Pagination offset |
+| `email` | string | — | Filter by customer email (ILIKE) |
+
+Auth: session + RLS (users only see customers from their own orders/subs).
+
+**Response:**
+
+```json
+{
+  "customers": [
+    {
+      "id": "uuid",
+      "providerCustomerId": "LS-cust-123",
+      "email": "buyer@example.com",
+      "name": "John Doe",
+      "country": "US",
+      "totalRevenueCurrency": 5700,
+      "mrr": 1900,
+      "status": "subscribed",
+      "createdAt": "2026-04-23T10:00:00Z"
+    }
+  ],
+  "count": 42
+}
+```
+
+Money values are in **minor units** (cents for USD).
+
+### Backfill — `POST /api/commerce/customers?pages=N`
+
+Manually sync customers from LS API into the local DB.
+
+**Query params:**
+
+| Param | Type | Default | Description |
+|---|---|---|---|
+| `pages` | number | `1` | Pages to fetch from LS (100 customers/page). Max 10. |
+
+**Response:**
+
+```json
+{ "synced": 38 }
+```
+
+## UI Page
+
+Page: `/customers`.
+
+Table columns:
+
+- Name, email, country
+- Total revenue (lifetime), MRR (active subscriptions)
+- Status badge (active / archived)
+- Click row → detail page (if available)
+
+## Aggregate Metrics
+
+The LS API/webhook includes computed fields:
+
+- `total_revenue_currency` — total of all orders from this customer (minor units)
+- `mrr` — sum of active subscription amounts normalized to monthly (minor units)
+
+These are written directly during backfill/webhook handling — LS does the computation server-side. If you need to recompute locally (e.g. after manual edits), write your own SQL aggregate query.
+
+## Customer Archive
+
+If a customer refunds everything / cancels subscriptions:
+
+- The `subscription_cancelled` webhook — don't auto-archive (they might subscribe again)
+- Archive manually via a UI button, or with a cron job (archive if no order + no active sub > 1 year)
+
+Archive = status `archived`. Filter out from the default listing:
+
+```sql
+SELECT * FROM commerce_customers
+WHERE status = 'active' OR $showArchived = true;
+```
+
+## GDPR / Data Deletion
+
+Customers can request data deletion. The boilerplate doesn't ship a UI for this — implement it per your compliance region:
+
+1. Endpoint: `DELETE /api/commerce/customers/[id]` (requires admin / permission)
+2. Handler:
+   - Delete from `commerce_customers`
+   - Anonymize in `commerce_orders` (set `customer_email = NULL`, `customer_name = "[Deleted]"`)
+   - Anonymize in `commerce_subscriptions` (same)
+   - Log the deletion in `activity_logs`
+
+LS has its own "erase customer" feature — you can trigger it from the app.
+
+> ⏳ **Customer Portal — Extension point.** LS exposes a `customer_portal` URL in customer attributes (see `LSCustomerAttributes.urls.customer_portal` in `src/modules/commerce/types.ts`). The boilerplate doesn't ship an endpoint to proxy this URL — implement it yourself if you need to let customers access their self-service portal from your app. Example:
+>
+> ```ts
+> // src/app/api/commerce/customers/[id]/portal/route.ts
+> export async function GET(req, { params }) {
+>   const { id } = await params;
+>   // Fetch from LS, return attributes.urls.customer_portal
+> }
+> ```
+
+## Troubleshoot
+
+### New Customer Doesn't Appear
+
+- First customer record comes via webhook — the webhook isn't set up / failed
+- Handler bug isn't inserting a row when `order_created` arrives from a new customer
+- Check logs in the webhook handler
+
+### Duplicate Customers (2 rows with same email)
+
+- Race condition in the webhook handler — 2 webhook events arrive together, idempotency passes once but rows get created by concurrent handlers
+- Fix: add a UNIQUE constraint on `(owner_user_id, email)`:
+  ```sql
+  ALTER TABLE commerce_customers
+  ADD CONSTRAINT unique_user_customer_email
+  UNIQUE (owner_user_id, email);
+  ```
+
+### Total Revenue Wrong
+
+- Aggregate stale — run backfill via `POST /api/commerce/customers?pages=N` to refresh from LS
+- Formula inaccurate (e.g. includes refunded orders) — check the aggregate query

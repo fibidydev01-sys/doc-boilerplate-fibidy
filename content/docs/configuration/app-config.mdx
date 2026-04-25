@@ -1,0 +1,328 @@
+---
+title: App Config
+description: "`src/config/app.config.ts` — the boilerplate's brain"
+---
+
+`src/config/app.config.ts` controls fundamental behavior: module toggles, auth providers, roles, redirects, locale.
+
+## Full Structure
+
+```ts
+export const appConfig = {
+  modules: { /* 8 modules */ },
+  auth: { /* 12 settings */ },
+  payment: { /* 3 settings */ },
+  locale: { /* 2 settings */ },
+} as const;
+```
+
+## `modules`
+
+8 module slots, per-module toggle:
+
+```ts
+modules: {
+  admin:    { enabled: true,  path: "/admin" },
+  commerce: { enabled: true,  path: "/products" },
+  saas:     { enabled: false, path: "/workspace" },
+  landing:  { enabled: false, path: "/" },
+  blog:     { enabled: false, path: "/blog" },
+  project:  { enabled: false, path: "/projects" },
+  forum:    { enabled: false, path: "/forum" },
+  chat:     { enabled: false, path: "/chat" },
+}
+```
+
+Details in [Module System](/docs/architecture/module-system).
+
+## `auth`
+
+### `passwordProviders`
+
+Credential-based providers (email/password + magic link). Array order = render order in the form.
+
+```ts
+passwordProviders: ["email", "magic-link"] as const,
+```
+
+Valid values: `"email"` | `"magic-link"`.
+
+- Empty array `[]` → disable all credential-based auth (OAuth only)
+- Keep only `"email"` → hide Magic Link tab in the login form
+- Keep only `"magic-link"` → passwordless only, hide Password tab
+
+### `oauthProviders`
+
+Active OAuth providers:
+
+```ts
+oauthProviders: ["google"] as const,
+```
+
+Currently valid values: `"google"`. Adding a new provider (GitHub, Apple, etc.) requires:
+
+1. Enable in Supabase Dashboard → Providers
+2. Add the string to this array (extends the `OAuthProvider` type)
+3. Register an icon + label in `src/core/auth/components/providers/oauth-config.tsx`
+
+Pattern details in [Adding OAuth Providers](/docs/authentication/adding-oauth-providers).
+
+### `roles`
+
+Every valid role in the system:
+
+```ts
+roles: ["super_admin", "admin", "editor", "viewer", "user"] as const,
+```
+
+The `UserRole` type is auto-derived from this array. Change the array → the type changes.
+
+> ⚠️ **Changing the `roles` array requires a matching DB migration.**
+>
+> The `user_profiles.role` column has a `CHECK` constraint (from `setup.sql`):
+>
+> ```sql
+> CONSTRAINT user_profiles_role_check
+>   CHECK (role IN ('super_admin', 'admin', 'editor', 'viewer', 'user'))
+> ```
+>
+> Adding a new role to the config without updating the constraint → every attempt to assign that role to a user fails with `violates check constraint user_profiles_role_check`.
+>
+> **Adding a role** (example: `"moderator"`):
+>
+> ```sql
+> ALTER TABLE public.user_profiles
+>   DROP CONSTRAINT user_profiles_role_check;
+>
+> ALTER TABLE public.user_profiles
+>   ADD CONSTRAINT user_profiles_role_check
+>   CHECK (role IN ('super_admin', 'admin', 'editor', 'viewer', 'user', 'moderator'));
+> ```
+>
+> **Removing a role** is more invasive — you'll have existing rows with that role value in `user_profiles`. Migrate those rows first (update to a supported role or delete), then drop + re-add the constraint. Don't remove the role from config until the DB is clean, or authenticated users with that role will be locked out.
+
+### `adminRoles`
+
+Subset of `roles` considered admin (legacy — actual permissions are enforced via `permissionMatrix`):
+
+```ts
+adminRoles: ["super_admin", "admin"] as const,
+```
+
+Used by the `isAdminRole()` helper. **Preferred:** use `can(role, "admin:access")` which reads from the permission matrix.
+
+### `defaultRole`
+
+The role auto-assigned when a new user registers:
+
+```ts
+defaultRole: "user" as const,
+```
+
+The `handle_new_user()` DB trigger sets the `role` column to this value when inserting a new row into `user_profiles`.
+
+### `postLoginRedirect` + `postLogoutRedirect`
+
+```ts
+postLoginRedirect: "/dashboard",
+postLogoutRedirect: "/login",
+```
+
+- `postLoginRedirect` — global fallback when `returnTo` is empty and no role override exists
+- `postLogoutRedirect` — where to redirect after logout (= login page)
+
+### `roleRedirects`
+
+Per-role landing page after login:
+
+```ts
+roleRedirects: {
+  super_admin: "/admin",
+  admin: "/admin",
+} as Partial<Record<string, string>>,
+```
+
+Admins go straight to `/admin`, other roles fall back to `postLoginRedirect`.
+
+**Priority order** (the `resolvePostLoginRedirect()` helper):
+
+1. `returnTo` (if a valid internal path)
+2. `roleRedirects[role]`
+3. `postLoginRedirect`
+
+`returnTo` is strictly validated: must start with `/`, not `//` (protocol-relative), not `/login` (prevents redirect loops), external URLs rejected (prevents open-redirect attacks).
+
+### `allowPublicSignup`
+
+```ts
+allowPublicSignup: true,
+```
+
+- `true` (PaaS mode) — users can register themselves via `/register`
+- `false` (internal mode) — only admins can provision users (delete the `/register` page, users are invited manually)
+
+### `requireEmailVerification`
+
+```ts
+requireEmailVerification: false,
+```
+
+⚠️ **CRITICAL — must MATCH the Supabase dashboard.**
+
+This setting is just a hint for UI logic. Actual enforcement happens in Supabase:
+
+- Supabase Dashboard → **Authentication** → **Providers** → **Email** → **Confirm email** toggle
+- If this differs from the Supabase setting, behavior gets confusing
+
+Recommended:
+- Dev: `false` in both places (immediate login after signup, easy testing)
+- Production: `true` in both places (prevents fake accounts)
+
+### `magicLinkMode`
+
+```ts
+magicLinkMode: "login-or-signup" as "login-or-signup" | "login-only",
+```
+
+- `"login-or-signup"` (default) — if email isn't registered → auto-create a new user + send magic link
+- `"login-only"` — email must already be registered, else "user not found"
+
+Affects the `shouldCreateUser` prop in the `supabase.auth.signInWithOtp()` client call.
+
+## `payment`
+
+```ts
+payment: {
+  enabled: false,
+  mode: "subscription" as "subscription" | "one-time" | "both",
+  provider: "lemonsqueezy" as const,
+},
+```
+
+- `enabled` — master switch. If `false`, every payment flow is skipped
+- `mode` — subscription-only, one-time-only, or both
+- `provider` — in Phase 1+2: `"lemonsqueezy"`. Switching to another = extend the codebase
+
+Currently `payment.enabled` **isn't used** in the commerce module (commerce is independent of this flag). The flag is reserved for future payment-specific logic (e.g. a custom pricing tier page).
+
+## `locale`
+
+```ts
+locale: {
+  default: "id",
+  available: ["id", "en"] as const,
+}
+```
+
+- `default` — active locale at render (fixed, not per-user). **Ships as `"id"` (Indonesian).**
+- `available` — every bundled locale
+
+> ⚠️ **Same warning as `roles`** — `user_profiles.locale` has a matching `CHECK` constraint. If you add a new locale to `available`, you also need to run a DB migration to update the constraint. Full steps in [Internationalization → Adding a New Locale](/docs/internationalization#adding-a-new-locale).
+
+### Targeting English Users
+
+If your audience is English-speaking, change the default:
+
+```ts
+locale: {
+  default: "en",
+  available: ["id", "en"] as const,
+}
+```
+
+This flips the UI to English. However:
+
+- ⚠️ **Email templates are NOT translated by this flag.** Subject lines and bodies are hardcoded Indonesian in `src/shared/email/templates/` + `src/shared/email/send-auth-email.tsx`. Translate them manually — see [Email Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+- You may want to change `NEXT_PUBLIC_APP_LANG` env var to `en-US` to match the PWA manifest + HTML `lang` attribute.
+
+Add a new locale:
+
+1. Copy `src/core/i18n/locales/id.json` → `xx.json`, translate
+2. Import in `src/core/i18n/index.ts`, add to the `locales` record
+3. Add the code to the `available` array
+4. **Update the DB CHECK constraint** (see warning above)
+
+Details in [Internationalization](/docs/internationalization).
+
+## Helper Functions
+
+All helpers at the bottom of `app.config.ts`:
+
+### `isAdminRole(role: string): boolean`
+
+Legacy compat. Equivalent to `can(role, "admin:access")`. New code: use `can()` directly.
+
+### `isModuleEnabled(name: ModuleName): boolean`
+
+```ts
+import { isModuleEnabled } from "@/config";
+
+if (isModuleEnabled('commerce')) {
+  // show the commerce nav link
+}
+```
+
+### `getEnabledModulePaths(): string[]`
+
+Returns an array of paths for all enabled modules. For dynamic navigation generation.
+
+### `resolvePostLoginRedirect(role, returnTo): string`
+
+Used in every auth form + OAuth callback. Priority: returnTo → role override → global fallback.
+
+## Adding an OAuth Provider
+
+As an example, let's say you want to add GitHub OAuth:
+
+### 1. Enable in Supabase
+
+Dashboard → Authentication → Providers → GitHub → enable, fill in client ID + secret.
+
+### 2. Extend config
+
+```ts
+// src/config/app.config.ts
+oauthProviders: ["google", "github"] as const,
+```
+
+The `OAuthProvider` type auto-includes `"github"`.
+
+### 3. Register icon + label
+
+Edit `src/core/auth/components/providers/oauth-config.tsx`:
+
+```tsx
+import { GithubIcon } from "./github-icon";
+
+export const oauthProviderConfig: Record<OAuthProvider, OAuthProviderMeta> = {
+  google: {
+    loginLabelKey: "auth.signInWithGoogle",
+    signupLabelKey: "auth.signUpWithGoogle",
+    icon: <GoogleIcon />,
+  },
+  github: {
+    loginLabelKey: "auth.signInWithGithub",
+    signupLabelKey: "auth.signUpWithGithub",
+    icon: <GithubIcon />,
+  },
+};
+```
+
+### 4. Add i18n keys
+
+Edit `src/core/i18n/locales/id.json` + `en.json`:
+
+```json
+{
+  "auth": {
+    "signInWithGithub": "Sign in with GitHub",
+    "signUpWithGithub": "Sign up with GitHub"
+  }
+}
+```
+
+### 5. Add the icon component
+
+Create `src/core/auth/components/providers/github-icon.tsx` — an inline SVG component.
+
+LoginForm & RegisterForm auto-render the new button — no form file edits required.

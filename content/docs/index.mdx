@@ -1,0 +1,80 @@
+---
+title: Introduction
+description: Full-stack Next.js + Supabase boilerplate — production-ready, config-driven
+---
+
+Welcome. These docs are your complete guide to setting up, deploying, and extending the boilerplate.
+
+## What You Get
+
+A production-ready Next.js 16 + Supabase boilerplate. Swap the `.env` file and your logo, and the application is ready to ship. No need to rewrite auth, dashboards, commerce integration, or email delivery from scratch.
+
+**Included out of the box:**
+
+- Complete auth flows — email/password, magic link, Google OAuth, forgot/reset password
+- Role-based access control with permission matrix and wildcard support
+- Commerce module — Lemon Squeezy integration (products, orders, subscriptions, customers, checkout, webhooks)
+- Transactional auth emails via Resend + React Email templates (auto-rebrand)
+- Supabase Send Email Hook — replaces Supabase's limited default SMTP
+- Dashboard with sidebar, mobile bottom nav, and admin panel
+- Built-in i18n (Indonesian + English) with full type safety
+- Append-only activity logging for audit trails
+- AES-256-GCM encryption for sensitive data (API keys, webhook secrets)
+- PWA manifest + service worker ready
+- 8 module slots (admin + commerce fully built, 6 placeholders ready to extend)
+
+**Tech stack at a glance:** Next.js 16 · React 19 · TypeScript · Supabase · Tailwind v4 · Radix UI + shadcn/ui · Zustand · React Hook Form + Zod v4 · Resend · Sonner · pnpm.
+
+Full details in [Tech Stack](/docs/tech-stack).
+
+## Development Status
+
+🔒 **FINAL at Phase 2.** This boilerplate is feature-complete. Every promised feature has shipped. There is no Phase 3.
+
+Scope complete:
+
+- **Phase 0** — Foundation (config system, i18n, Supabase clients, RBAC, encryption, activity logging, layout primitives)
+- **Phase 1** — Auth flows + Commerce credentials & read-only products
+- **Phase 2** — Full commerce CRUD + custom auth email via Resend + Send Email Hook
+
+## First Time Here?
+
+Recommended reading order:
+
+1. **[Tech Stack](/docs/tech-stack)** — high-level overview of the technology choices (5-minute read)
+2. **[Setup Introduction](/docs/setup/introduction)** — setup sequence (3-minute read)
+3. **[Project Setup](/docs/setup/project)** — clone, install, configure `.env`, run dev (15–30 minutes hands-on)
+4. **[Project Structure](/docs/working-with-the-codebase/project-structure)** — folder map
+
+Target: have the app running on `localhost:3000` with working auth email in under 30 minutes.
+
+## Ready to Deploy?
+
+1. **[Supabase Setup](/docs/setup/supabase)** — create project, run `setup.sql`, register the hook
+2. **[Resend Setup](/docs/setup/resend)** — verify your domain, obtain an API key
+3. **[Deployment → Vercel](/docs/deployment/vercel)** — deploy with complete env vars
+4. **[Pre-Launch Checklist](/docs/deployment/checklist)** — verify everything before go-live
+
+## Stuck?
+
+- **[Troubleshooting](/docs/troubleshooting)** — common issues and their fixes
+- **[Environment Variables](/docs/environment-variables)** — all 18 env vars, where to get them, what they do
+
+## Extension Points (Not Included)
+
+Three sections in the sidebar are marked **(Not Included)**:
+
+- Push Notification
+- Analytics
+- Monitoring
+
+These pages are **not shipped features** — they're reference documentation for when you want to add them to your fork. The boilerplate is FINAL at Phase 2. New features are your fork's responsibility.
+
+## Documentation Conventions
+
+- **✅** = already implemented, ready to use
+- **⏳** = placeholder / extension point (you implement it)
+- **⚠️** = warning, read carefully
+- **🔒** = security-sensitive, don't leak
+- Code blocks starting with `#` are comments, not commands
+- File paths use the format `src/modules/commerce/...` — relative to project root

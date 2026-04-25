@@ -1,0 +1,189 @@
+---
+title: Overview
+description: Lemon Squeezy integration — credentials, products, orders, subscriptions, webhooks
+---
+
+The commerce module integrates [Lemon Squeezy](https://lemonsqueezy.com) (LS) as the payment provider. **Fully implemented in Phase 2** — complete CRUD for credentials, products, orders, subscriptions, customers, checkout, and webhooks.
+
+## Status
+
+✅ **Fully implemented.** Production-ready after:
+1. Connecting an LS API key
+2. Configuring a webhook (per user)
+
+Details in [Commerce Setup](/docs/commerce/setup).
+
+## Per-User Architecture
+
+This boilerplate supports **multi-tenant commerce**. Each user can connect their own LS account and sell their own products — similar to platforms like Gumroad or Lemon Squeezy itself.
+
+There's no single "admin LS account" — every user has their own separate credentials.
+
+### Implications
+
+- `commerce_credentials` — one row per user, encrypted API key
+- `commerce_webhook_configs` — one row per user, per-user webhook URL + secret
+- `commerce_orders`, `commerce_subscriptions`, `commerce_customers` — scoped by `user_id` via RLS
+
+From Lemon Squeezy's perspective: each user is an **independent merchant** with their own LS account.
+
+### Simplifying to Single-Tenant
+
+If you only need one "central" account (you're the one selling, users only buy):
+
+1. Hard-code an API key in env (replace the per-user credential flow)
+2. Skip the `/settings/integrations` UI
+3. Use one webhook config via Supabase Hooks / route directly
+
+The boilerplate defaults to multi-tenant — stripping that out if you don't need it is on you.
+
+## High-Level Flow
+
+```
+User A (merchant)
+  ↓
+[UI /settings/integrations] Enter LS API key
+  ↓
+[encrypt] Save encrypted to commerce_credentials
+  ↓
+[UI /settings/webhooks] Copy webhook URL + secret
+  ↓
+[LS Dashboard] Register webhook with URL + secret
+  ↓
+User B (buyer)
+  ↓
+[UI /products] Browse User A's products
+  ↓
+[Checkout] POST /api/commerce/checkout → LS checkout URL
+  ↓
+[LS external] User pays
+  ↓
+[LS → webhook] POST /api/commerce/webhooks/{tokenUserA}
+  ↓
+[verify HMAC] using User A's webhook secret
+  ↓
+[upsert] commerce_orders (user_id: A)
+  ↓
+User A sees the order appear in /orders
+```
+
+## 8 Commerce Tables
+
+| Table | Contents |
+|---|---|
+| `commerce_credentials` | Encrypted LS API key per user |
+| `commerce_webhook_configs` | Per-user webhook token, encrypted secret, endpoint URL |
+| `commerce_webhook_events` | Idempotency store — UNIQUE event_id prevents double-processing |
+| `commerce_orders` | Mirror of orders from LS |
+| `commerce_subscriptions` | Mirror of subscriptions + status |
+| `commerce_customers` | Mirror of customers |
+
+Plus 2 shared tables:
+
+- `user_profiles` — user who owns the credential
+- `activity_logs` — audit trail for commerce operations
+
+## Security Measures
+
+### Encryption at Rest
+
+Sensitive data is encrypted before insert:
+
+- `commerce_credentials.encrypted_api_key` — LS API key
+- `commerce_webhook_configs.encrypted_secret` — webhook HMAC secret
+
+Uses AES-256-GCM with the `ENCRYPTION_KEY` env var. The `encrypt()` + `decrypt()` helpers live in `src/core/lib/encryption.ts`.
+
+Details in [Database Overview → Encryption](/docs/database/overview#encryption-at-rest).
+
+### HMAC Verification at Webhook
+
+The webhook endpoint verifies the HMAC signature using the user's secret before processing. A webhook without a valid signature → 401 Unauthorized, no DB write.
+
+Implementation uses native Node crypto (`crypto.createHmac("sha256", secret)`) in `src/modules/commerce/lib/webhook-verify.ts`.
+
+### Idempotency
+
+LS may retry a webhook when the response is not 200. The idempotency store (`commerce_webhook_events.event_id UNIQUE`) prevents double-processing:
+
+```sql
+INSERT INTO commerce_webhook_events (event_id, user_id, event_type, payload)
+VALUES (...)
+ON CONFLICT (event_id) DO NOTHING;  -- second time: no-op
+```
+
+On conflict, the handler returns 200 without re-upserting orders — the webhook is treated as already acknowledged from LS's perspective.
+
+### Service Role Client
+
+The webhook ingestion handler uses `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS) because webhooks arrive without a user session. The handler is responsible for verifying the token → resolving user_id → writing to that user's rows.
+
+Service role is **only** used in `/api/commerce/webhooks/[token]/route.ts`. Everything else uses the user session + RLS.
+
+## Module Structure
+
+```
+src/modules/commerce/
+├── components/           ← UI components (pages + widgets)
+├── services/             ← DB queries + LS API calls
+├── lib/                  ← utilities (LS client, webhook verify)
+├── types.ts              ← TypeScript types
+├── module.config.ts      ← module metadata
+├── index.ts              ← barrel export
+└── README.md
+```
+
+For deep exploration: `src/modules/commerce/services/` — one file per domain (`credentials`, `products`, `orders`, `subscriptions`, `customers`, `checkout`, `webhooks`).
+
+## API Routes
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/commerce/credentials` | GET | Credential status (safe, no key exposed) |
+| `/api/commerce/credentials` | POST | Verify + save LS API key |
+| `/api/commerce/credentials` | DELETE | Remove credential |
+| `/api/commerce/products` | GET | List products (via LS API, not cached) |
+| `/api/commerce/orders` | GET | List orders (from local DB) |
+| `/api/commerce/orders` | POST | Backfill orders from LS (`?pages=N`) |
+| `/api/commerce/orders/[id]` | GET | Single order by LS `provider_order_id` |
+| `/api/commerce/subscriptions` | GET | List subscriptions |
+| `/api/commerce/subscriptions` | POST | Backfill subscriptions from LS (`?pages=N`) |
+| `/api/commerce/subscriptions/[id]` | GET | Single subscription by LS `provider_subscription_id` |
+| `/api/commerce/subscriptions/[id]` | PATCH | Pause / resume / cancel |
+| `/api/commerce/customers` | GET | List customers |
+| `/api/commerce/customers` | POST | Backfill customers from LS (`?pages=N`) |
+| `/api/commerce/checkout` | POST | Generate an LS checkout URL |
+| `/api/commerce/webhooks/config` | GET | Get current webhook config status |
+| `/api/commerce/webhooks/config` | POST | Provision / regenerate webhook config |
+| `/api/commerce/webhooks/config` | DELETE | Delete webhook config |
+| `/api/commerce/webhooks/[token]` | POST | Receive LS webhook (public, HMAC-verified) |
+
+Every endpoint (except `/webhooks/[token]`) requires an auth session + RLS.
+
+Detail per endpoint ada di halaman masing-masing: [products](/docs/commerce/products), [orders](/docs/commerce/orders), [subscriptions](/docs/commerce/subscriptions), [customers](/docs/commerce/customers), [checkout](/docs/commerce/checkout), [webhooks](/docs/commerce/webhooks).
+
+## Why Lemon Squeezy, Not Stripe?
+
+**LS is a Merchant of Record (MoR).** LS is the legal entity that sells to the customer, not you. Implications:
+
+| Concern | Stripe (you're the MoR) | Lemon Squeezy (LS is MoR) |
+|---|---|---|
+| Sales tax / VAT | You collect + remit | LS handles |
+| International tax compliance | Painful (EU VAT, US sales tax by state) | LS handles |
+| Business registration | Need a legal entity per region | Not needed |
+| Chargebacks | Dispute comes straight to you | LS handles, you only lose revenue |
+| Fee | 2.9% + $0.30 per txn | 5% + $0.50 per txn |
+
+**Trade-off:** higher fees, but zero compliance overhead. A good fit for solo devs / small teams without an accounting team.
+
+Once the business scales (> $500k/year), switching to Stripe starts making sense on fees alone. At that point, replace the commerce module — the pattern is the same (encrypted credentials + webhook); only the API and payload shapes change.
+
+## Learn More
+
+- [Setup](/docs/commerce/setup) — connect an LS account
+- [Webhooks](/docs/commerce/webhooks) — register the webhook in LS
+- [Products](/docs/commerce/products) — list & checkout
+- [Orders](/docs/commerce/orders) — one-time purchases
+- [Subscriptions](/docs/commerce/subscriptions) — recurring + lifecycle
+- [Customers](/docs/commerce/customers) — customer directory
+- [Checkout](/docs/commerce/checkout) — checkout URL generation

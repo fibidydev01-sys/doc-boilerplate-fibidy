@@ -1,0 +1,293 @@
+---
+title: Setup
+description: "Extension point — examples integrating PostHog / Vercel Analytics"
+---
+
+> ⏳ **Extension Point — Not Included.** Pick a vendor and implement yourself.
+
+## Vercel Analytics (Built-in Option)
+
+Minimal effort. Pageviews + Web Vitals tracking.
+
+### Install
+
+```bash
+pnpm add @vercel/analytics
+```
+
+### Integrate
+
+```tsx
+// src/app/layout.tsx
+import { Analytics } from "@vercel/analytics/react";
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <Analytics />
+      </body>
+    </html>
+  );
+}
+```
+
+### Enable in Vercel
+
+Vercel Dashboard → project → **Analytics** tab → **Enable**.
+
+Free tier: 2.5k data points/month. Sufficient for a small app.
+
+### Trade-offs
+
+- ✅ Zero-config, built-in with Vercel
+- ✅ Privacy-respecting
+- ❌ Limited to pageviews + vitals — no event tracking, no user journey
+- ❌ Data retention limited on the free tier
+
+## PostHog (Full Product Analytics)
+
+Open source, generous free tier (1M events/month).
+
+### Install
+
+```bash
+pnpm add posthog-js posthog-node
+```
+
+### Env Vars
+
+Sign up at [posthog.com](https://posthog.com) and get your API key:
+
+```bash
+NEXT_PUBLIC_POSTHOG_KEY=phc_xxxxx
+NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com  # or EU/self-host
+POSTHOG_API_KEY=phx_xxxxx  # server-side, private
+```
+
+### Client-Side Init
+
+```tsx
+// src/shared/analytics/provider.tsx
+"use client";
+
+import posthog from "posthog-js";
+import { PostHogProvider } from "posthog-js/react";
+import { useEffect } from "react";
+
+if (typeof window !== "undefined") {
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    person_profiles: "identified_only",  // only track identified users
+    capture_pageview: false,              // we'll handle this manually
+  });
+}
+
+export function PHProvider({ children }: { children: React.ReactNode }) {
+  return <PostHogProvider client={posthog}>{children}</PostHogProvider>;
+}
+```
+
+### Manual Pageview (App Router)
+
+The App Router doesn't auto-fire pageview events. Track manually:
+
+```tsx
+// src/shared/analytics/pageview-tracker.tsx
+"use client";
+
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect } from "react";
+import { usePostHog } from "posthog-js/react";
+
+export function PageviewTracker() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    if (!pathname || !posthog) return;
+    const url = searchParams?.toString()
+      ? `${pathname}?${searchParams}`
+      : pathname;
+    posthog.capture("$pageview", { $current_url: url });
+  }, [pathname, searchParams, posthog]);
+
+  return null;
+}
+```
+
+### Add to Root Layout
+
+```tsx
+// src/app/layout.tsx
+import { PHProvider } from "@/shared/analytics/provider";
+import { PageviewTracker } from "@/shared/analytics/pageview-tracker";
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        <PHProvider>
+          <PageviewTracker />
+          {children}
+        </PHProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+### Identify Users After Login
+
+```tsx
+// src/core/auth/components/login-form.tsx (or wherever auth success is handled)
+import { usePostHog } from "posthog-js/react";
+
+const posthog = usePostHog();
+
+// After successful login
+posthog?.identify(user.id, {
+  email: user.email,  // optional — consider privacy
+  role: user.role,
+});
+```
+
+Clear identity on logout:
+
+```tsx
+posthog?.reset();
+```
+
+### Server-Side Tracking
+
+```ts
+// src/shared/analytics/server.ts
+import { PostHog } from "posthog-node";
+
+let client: PostHog | null = null;
+
+function getClient() {
+  if (!client) {
+    client = new PostHog(process.env.POSTHOG_API_KEY!, {
+      host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    });
+  }
+  return client;
+}
+
+export async function trackServerEvent(
+  userId: string,
+  event: string,
+  properties?: Record<string, unknown>,
+) {
+  const ph = getClient();
+  ph.capture({ distinctId: userId, event, properties });
+}
+
+// At server shutdown (for long-running processes)
+export async function flushAnalytics() {
+  await client?.shutdownAsync();
+}
+```
+
+Usage:
+
+```ts
+import { trackServerEvent } from "@/shared/analytics/server";
+
+// In a webhook handler
+await trackServerEvent(userId, "order_received", {
+  order_id: orderId,
+  amount: totalAmount,
+});
+```
+
+## Plausible (Privacy-First, Simple)
+
+If you only need pageviews and no cookies:
+
+### Install the Script
+
+```tsx
+// src/app/layout.tsx
+import Script from "next/script";
+
+<Script
+  src="https://plausible.io/js/script.js"
+  data-domain="yourdomain.com"
+  strategy="afterInteractive"
+/>
+```
+
+That's it — pageviews are auto-tracked. No consent banner (cookieless).
+
+### Custom Events
+
+```tsx
+<Script id="plausible-events">
+  {`
+    window.plausible = window.plausible || function() { (window.plausible.q = window.plausible.q || []).push(arguments) }
+  `}
+</Script>
+```
+
+Trigger:
+
+```tsx
+window.plausible?.("Signup", { props: { method: "google" } });
+```
+
+### Trade-offs
+
+- ✅ Privacy-first (GDPR/CCPA safe)
+- ✅ Simple
+- ❌ Paid only (~$9/month for 10k pageviews)
+- ❌ Limited features (no funnel, no cohort)
+
+## Google Analytics 4
+
+Unlimited free tier, but with privacy concerns + complex setup.
+
+### Install
+
+```bash
+pnpm add @next/third-parties
+```
+
+### Integrate
+
+```tsx
+import { GoogleAnalytics } from "@next/third-parties/google";
+
+<html>
+  <body>
+    {children}
+    <GoogleAnalytics gaId="G-XXXXXXX" />
+  </body>
+</html>
+```
+
+### Consent (EU/CA)
+
+GA4 requires a consent banner. Setup:
+
+- Library: [Consent Mode v2](https://developers.google.com/tag-platform/security/guides/consent)
+- Or use [CookieYes](https://www.cookieyes.com/) / [Cookiebot](https://www.cookiebot.com/) for the banner
+
+## Which One?
+
+**Recommendation based on situation:**
+
+| Use Case | Pick |
+|---|---|
+| Just need pageviews + Vitals | **Vercel Analytics** |
+| Full product analytics, scale | **PostHog** (generous free tier) |
+| Privacy-first, compliance | **Plausible** or **Fathom** |
+| Enterprise, Google ecosystem | **GA4** |
+| Session replay | **PostHog** or **LogRocket** |
+
+## Next
+
+- [Usage](/docs/analytics/usage) — patterns + event naming conventions

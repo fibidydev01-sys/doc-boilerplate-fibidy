@@ -1,0 +1,365 @@
+---
+title: Internationalization
+description: Custom `t()` function — type-safe i18n, zero runtime dependencies
+---
+
+The boilerplate uses a custom i18n implementation in `src/core/i18n/` — no library (no react-i18next, no next-intl). It's enough for the boilerplate's scope, adds no extra dependencies, and is fully type-safe.
+
+## Structure
+
+```
+src/core/i18n/
+├── index.ts              ← t() function + getTranslation()
+├── types.ts              ← TranslationKey type derived from keys
+└── locales/
+    ├── id.json           ← Indonesian (default)
+    └── en.json           ← English
+```
+
+## Default Locale
+
+In `src/config/app.config.ts`:
+
+```ts
+locale: {
+  default: "id",
+  available: ["id", "en"] as const,
+}
+```
+
+`default` — the locale rendered when the app loads. **Ships as `"id"` (Indonesian).** `available` — every locale bundled in.
+
+### Switching Default to English
+
+For English-speaking audiences:
+
+```ts
+locale: {
+  default: "en",
+  available: ["id", "en"] as const,
+}
+```
+
+That single change flips every `t()` call to read from `en.json`. However, two caveats:
+
+1. **Email templates are NOT routed through `t()`.** They're hardcoded Indonesian. See [Email Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+2. Consider also setting `NEXT_PUBLIC_APP_LANG=en-US` (env var) so the HTML `lang` attribute + PWA manifest match.
+
+## Using `t()` in Components
+
+### Client Component
+
+```tsx
+"use client";
+import { useTranslation } from "@/core/i18n";
+
+export function MyComponent() {
+  const { t } = useTranslation();
+
+  return (
+    <div>
+      <h1>{t("common.welcome")}</h1>
+      <button>{t("auth.signIn")}</button>
+    </div>
+  );
+}
+```
+
+### Server Component
+
+```tsx
+import { getTranslation } from "@/core/i18n";
+
+export default async function Page() {
+  const t = getTranslation();
+
+  return (
+    <div>
+      <h1>{t("common.welcome")}</h1>
+    </div>
+  );
+}
+```
+
+**Differences:**
+
+- `useTranslation()` — client hook, subscribes to locale changes (if you implement a locale switcher)
+- `getTranslation()` — sync function for the server, reads from `appConfig.locale.default`
+
+The boilerplate doesn't implement a **runtime locale switcher** by default — the locale is fixed via config. If you want user-selectable locales:
+
+1. Persist the locale in a cookie or `user_profiles.locale`
+2. Extend `getTranslation(locale)` to accept a parameter
+3. Sync on the client via `useTranslation({ locale })` or a context provider
+
+## Key Format
+
+Dot-notation, nested:
+
+```json
+{
+  "common": {
+    "welcome": "Welcome",
+    "loading": "Loading..."
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "validation": {
+      "emailRequired": "Email is required",
+      "passwordMinLength": "Password must be at least 8 characters"
+    }
+  }
+}
+```
+
+Access with dots:
+
+```tsx
+t("common.welcome")                       // "Welcome"
+t("auth.validation.emailRequired")        // "Email is required"
+```
+
+## Type Safety — `TranslationKey`
+
+The `TranslationKey` type is derived automatically from `id.json` — every possible key string is enumerated:
+
+```ts
+type TranslationKey =
+  | "common.welcome"
+  | "common.loading"
+  | "auth.signIn"
+  | "auth.validation.emailRequired"
+  | ... // every nested key
+```
+
+Effect:
+
+```tsx
+t("auth.signIn")           // ✅ OK
+t("auth.nonexistent")      // ❌ TypeScript error
+```
+
+Typos in keys are caught at compile time.
+
+> ⚠️ **Source-of-truth locale is `id.json`.** Because the type is derived from the Indonesian file, every other locale MUST mirror its key structure. If `en.json` is missing a key that exists in `id.json`, `t()` falls back to the Indonesian string at runtime — no compile error.
+
+## Parameter Interpolation
+
+```json
+{
+  "auth": {
+    "welcomeBack": "Welcome back, {name}!"
+  }
+}
+```
+
+```tsx
+t("auth.welcomeBack", { name: "John" })
+// → "Welcome back, John!"
+```
+
+Simple format: `{paramName}` in the string is replaced with the value.
+
+## Adding a New Locale
+
+### Step 1 — Create the JSON File
+
+Copy `src/core/i18n/locales/id.json` → `ja.json`. Translate every value.
+
+⚠️ **Don't change the keys** — every locale must have the same key set so the `TranslationKey` type stays consistent. If `id.json` has a key that `ja.json` doesn't, the runtime falls back to `id` when in the `ja` locale.
+
+### Step 2 — Register in Config
+
+```ts
+// src/config/app.config.ts
+locale: {
+  default: "id",
+  available: ["id", "en", "ja"] as const,
+}
+```
+
+### Step 3 — Import in `index.ts`
+
+```ts
+// src/core/i18n/index.ts
+import idLocale from "./locales/id.json";
+import enLocale from "./locales/en.json";
+import jaLocale from "./locales/ja.json";
+
+const locales = {
+  id: idLocale,
+  en: enLocale,
+  ja: jaLocale,
+};
+```
+
+### Step 4 — Activate
+
+Set it in config:
+
+```ts
+locale: { default: "ja", ... }
+```
+
+Restart the dev server → the UI renders in Japanese.
+
+### Step 5 — Update the DB CHECK constraint ⚠️
+
+**This step is easy to miss.** The `user_profiles.locale` column has a `CHECK` constraint limiting allowed values:
+
+```sql
+-- From setup.sql:
+CONSTRAINT user_profiles_locale_check
+  CHECK (locale IN ('id', 'en'))
+```
+
+Without updating this constraint, any attempt to save a profile with the new locale (e.g. when a new user signs up with `locale: 'ja'` in Google OAuth metadata, or when a user explicitly selects `ja` in their settings) will fail with:
+
+```
+new row for relation "user_profiles" violates check constraint "user_profiles_locale_check"
+```
+
+**Fix:** apply this migration via Supabase SQL Editor:
+
+```sql
+ALTER TABLE public.user_profiles
+  DROP CONSTRAINT user_profiles_locale_check;
+
+ALTER TABLE public.user_profiles
+  ADD CONSTRAINT user_profiles_locale_check
+  CHECK (locale IN ('id', 'en', 'ja'));  -- add your new locale
+```
+
+The `handle_new_user()` trigger has a locale whitelist too (falls back to `'id'` if the Google-provided locale isn't in the list). If you want Japanese users from Google OAuth to get `locale: 'ja'` automatically on signup, also update the trigger function in `setup.sql`:
+
+```sql
+resolved_locale := CASE
+  WHEN NEW.raw_user_meta_data ->> 'locale' IN ('id', 'en', 'ja')  -- add 'ja'
+    THEN NEW.raw_user_meta_data ->> 'locale'
+  ELSE 'id'
+END;
+```
+
+## Fallback Behavior
+
+When a key is missing in the active locale:
+
+```
+1. Check the active locale (e.g. `en`)
+2. If missing → check the default locale (`id`)
+3. If still missing → return the key literal (e.g. "auth.nonexistent")
+```
+
+In dev mode, a `console.warn` fires on miss. In production, the fallback is silent.
+
+## Integration with Zod Validation
+
+Zod validator error messages read from `t()`:
+
+```ts
+// src/core/lib/validators.ts
+import { getTranslation } from "@/core/i18n";
+
+const t = getTranslation();
+
+export const loginSchema = z.object({
+  email: z.string()
+    .min(1, t("auth.validation.emailRequired"))
+    .email(t("auth.validation.emailInvalid")),
+  password: z.string()
+    .min(1, t("auth.validation.passwordRequired")),
+});
+```
+
+Form error messages translate automatically.
+
+## Limitations
+
+### No Complex Pluralization
+
+`t("items.count", { count: 5 })` doesn't automatically handle "1 item" vs "5 items". If you need it:
+
+```tsx
+const key = count === 1 ? "items.singular" : "items.plural";
+t(key, { count })
+```
+
+Or implement a manual plural function. The boilerplate's scope doesn't require this.
+
+### No Date / Number Formatting
+
+Use the native API:
+
+```tsx
+new Intl.DateTimeFormat("en-US").format(new Date())
+new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(100)
+```
+
+Create your own helper if you use it frequently.
+
+### Runtime Locale Switching
+
+Not implemented yet. The boilerplate fixes the locale via config. To switch at runtime:
+
+1. Context provider + useState
+2. Persist the user's choice in a cookie
+3. Middleware reads the cookie → sets the locale for the request
+4. Re-render on switch
+
+The implementation is additive — it doesn't break existing code.
+
+### Email Templates Are Hardcoded Indonesian
+
+Emails in `src/shared/email/templates/` use hardcoded Indonesian copy (greetings, body, CTAs). Subject lines are also hardcoded Indonesian in `send-auth-email.tsx`. **Flipping `appConfig.locale.default` to `"en"` does NOT translate emails** — they stay Indonesian until you manually edit the template files.
+
+Details and workarounds in [Email Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+
+## Common Patterns
+
+### Date-Relative Translations
+
+```tsx
+// Naïve
+t(`time.${daysAgo > 0 ? "daysAgo" : "today"}`, { count: daysAgo })
+
+// Better: a library like `date-fns` with `locale` imports
+import { formatDistance } from "date-fns";
+import { enUS } from "date-fns/locale";
+
+formatDistance(date, new Date(), { locale: enUS, addSuffix: true })
+// "2 days ago"
+```
+
+### Namespace per Module
+
+Organize i18n keys per domain:
+
+```json
+{
+  "common": { ... },       // shared UI
+  "auth": { ... },         // auth module
+  "commerce": { ... },     // commerce module
+  "admin": { ... }
+}
+```
+
+Trade-off: a bigger JSON file but clearer ownership. Preferred for the boilerplate's scope.
+
+## Troubleshoot
+
+### Translation Returns the Literal "auth.signIn"
+
+- The key doesn't exist in the active locale
+- The active locale didn't load (config is off)
+- JSON syntax error in the file — validate with `JSON.parse(content)` in Node
+
+### TypeScript Complains "Key doesn't exist"
+
+- The key was added to JSON but the type wasn't regenerated
+- The `TranslationKey` type is inferred at build — restart the TS server
+- If inference isn't running, check `src/core/i18n/types.ts` — you may need a manual regenerate if tooling doesn't do it automatically
+
+### Profile Save Fails with "violates check constraint user_profiles_locale_check"
+
+- You added a new locale to config but skipped Step 5 above — apply the `ALTER TABLE ... CHECK` migration.

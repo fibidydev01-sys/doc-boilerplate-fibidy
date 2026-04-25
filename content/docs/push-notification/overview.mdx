@@ -1,0 +1,130 @@
+---
+title: Overview
+description: "Extension point — not a boilerplate feature. Guide for integrating push notifications."
+---
+
+> ⏳ **Extension Point — Not Included.**
+>
+> The boilerplate is FINAL at Phase 2 and **does not ship** push notifications. This page is reference documentation if you want to add it yourself after forking.
+>
+> Once you've implemented it, update your fork's docs to match the actual implementation.
+
+## What's a Push Notification?
+
+Notifications that pop up on a user's device even when the app isn't active in the foreground.
+
+Two types:
+
+| Type | Context | Tech |
+|---|---|---|
+| **Web Push** | Desktop browsers + mobile (Android Chrome) | Service Worker + Push API + VAPID |
+| **In-App** | While users are active in the app | Toast notifications (sonner — already in the boilerplate) |
+
+iOS Safari supports web push since iOS 16.4 (2023), but requires installing the PWA to the homescreen first. Not universal.
+
+## Why Isn't It in the Default Boilerplate?
+
+- **Scope creep** — push notifications are complex (service worker, VAPID keys, subscription management, per-platform quirks)
+- **User consent friction** — most users decline push notification prompts → low adoption
+- **Infrastructure cost** — need a delivery service (web push sends through browser vendor endpoints)
+- **Alternatives exist** — email + in-app notifications are enough for most transactional use cases
+
+If you need push notifications, implement them yourself — the overhead is worth it for specific use cases (chat apps, social apps, alert-heavy apps).
+
+## Implementation Patterns
+
+### 1. Service Worker + Web Push API
+
+Native browser API. Standard, but raw.
+
+**Pros:**
+
+- Free (no vendor service)
+- Full control
+- No vendor lock-in
+
+**Cons:**
+
+- Complex setup (VAPID keys, subscription storage, endpoints per browser vendor)
+- Per-vendor quirks (Safari vs Chrome vs Firefox)
+- Doesn't handle cross-platform (native mobile apps need APNs / FCM separately)
+
+### 2. Managed Service
+
+- **OneSignal** — generous free tier
+- **Pusher Beams** — native + web
+- **Firebase Cloud Messaging (FCM)** — native, decent web support
+
+**Pros:**
+
+- Abstracts multi-vendor complexity
+- Built-in analytics (delivery rate, open rate)
+- Targeting (user segmenting, A/B testing)
+- Cross-platform (web + iOS + Android native)
+
+**Cons:**
+
+- Vendor lock-in
+- Paid at scale
+- Privacy concerns (user data flows to the vendor)
+
+### 3. Hybrid
+
+Use Resend (email) + in-app toasts (sonner) — skip push. Covers 80% of use cases with less complexity.
+
+## Implementation Considerations
+
+### User Permission
+
+Browser push requires a permission prompt. UX:
+
+1. **Don't prompt on page load** — bad UX, users auto-deny
+2. **Contextual prompt** — after a meaningful action (e.g. after subscribing to notifications from settings)
+3. **Soft-ask first** — show a custom UI ("Enable notifications?") with a button, then trigger the browser prompt if they click Yes
+4. **Provide opt-out** — a settings page to disable
+
+### Subscription Storage
+
+Every user who grants permission → the browser generates a unique subscription object. Store it in the DB:
+
+```sql
+CREATE TABLE push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
+  endpoint text UNIQUE NOT NULL,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  user_agent text,
+  created_at timestamptz DEFAULT now()
+);
+```
+
+### Send Logic
+
+Server-side calls the push endpoint using a library:
+
+```ts
+// Example using the web-push library
+import webpush from "web-push";
+
+webpush.setVapidDetails(
+  "mailto:support@yourdomain.com",
+  process.env.VAPID_PUBLIC_KEY!,
+  process.env.VAPID_PRIVATE_KEY!,
+);
+
+await webpush.sendNotification(
+  {
+    endpoint: subscription.endpoint,
+    keys: { p256dh: subscription.p256dh, auth: subscription.auth }
+  },
+  JSON.stringify({ title: "Hello!", body: "New message" })
+);
+```
+
+## Other Docs in This Folder
+
+- [Setup](/docs/push-notification/setup) — VAPID keys + service worker skeleton
+- [Sending Notifications](/docs/push-notification/sending-notifications) — delivery patterns
+
+**Remember:** everything here is **reference guidance**, not a feature shipped by the default boilerplate. You implement it.

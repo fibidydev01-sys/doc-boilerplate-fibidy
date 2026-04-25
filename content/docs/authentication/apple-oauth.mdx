@@ -1,0 +1,47 @@
+---
+title: Apple OAuth
+description: Coming soon — Sign in with Apple for the web
+---
+
+import { Callout } from 'fumadocs-ui/components/callout'
+
+<Callout type="info" title="Coming Soon">
+  Apple OAuth for the web is still on the roadmap. For now, the boilerplate supports **Email + Password**, **Google OAuth**, and **Magic Link**.
+</Callout>
+
+## Why Not Yet?
+
+Apple OAuth for the web (not native iOS) has extra requirements:
+
+- Paid Apple Developer Account ($99/year)
+- Service ID + Services Key + Private Key setup
+- Domain verification via the associated domains file (`apple-app-site-association`)
+- Server-side JWT signing for the client secret (Apple rotates the private key periodically)
+
+For most web-only apps, this overhead isn't worth it — Google OAuth + Email already covers > 90% of the user base.
+
+## When Is It Worth Adding?
+
+Consider adding Apple OAuth if:
+
+- Your app has a native iOS companion — Apple mandates it on iOS submissions if you have Google/Facebook OAuth
+- Target audience heavy in the Apple ecosystem
+- Compliance requirement (some enterprise clients require "login with Apple ID")
+
+## Manual Integration (If You Need It Now)
+
+Supabase supports Apple OAuth. Quick steps:
+
+1. Enroll in the Apple Developer Program
+2. Apple Developer Portal → **Certificates, Identifiers & Profiles** → create a Service ID
+3. Set **Return URLs** to `https://<PROJECT_REF>.supabase.co/auth/v1/callback`
+4. Create a Services Key, download the `.p8` private key
+5. Supabase Dashboard → **Authentication** → **Providers** → **Apple** → fill in Client ID + Client Secret (generated from the private key)
+6. In `src/config/app.config.ts`, add `"apple"` to the `providers` array (+ update the `AuthProvider` type)
+7. Create an `AppleIcon` component + an entry in `oauthProviderConfig` in `login-form.tsx`
+
+Full reference: [Supabase Apple Login Guide](https://supabase.com/docs/guides/auth/social-login/auth-apple).
+
+## Voting
+
+If Apple OAuth matters for your use case, open an issue on the upstream repo with the `enhancement:auth` tag. Priority is decided by upvotes.

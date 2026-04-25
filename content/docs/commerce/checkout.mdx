@@ -1,0 +1,268 @@
+---
+title: Checkout
+description: Generate LS checkout URL + handle return
+---
+
+## What's a Checkout URL?
+
+LS generates a unique checkout URL per transaction. The URL:
+
+- Contains a preselected product/variant
+- Can include prefill info (email, name, discount code)
+- Expires in 24 hours
+- Single-use (once completed, the URL is invalid)
+
+Users are redirected to that URL → pay in the LS UI → LS redirects back to your `success_url` (optional).
+
+## Endpoint
+
+```
+POST /api/commerce/checkout
+Body: {
+  variant_id: "654321",
+  email?: "buyer@example.com",     // prefill email
+  name?: "John Doe",                // prefill name
+  discount_code?: "LAUNCH50",       // auto-apply discount
+  custom?: Record<string, string>,  // passthrough metadata
+  return_url?: "/thankyou"          // redirect after success
+}
+```
+
+Auth: optional (checkout works from public user / guest).
+
+### Response
+
+```json
+{
+  "checkout_url": "https://yourstore.lemonsqueezy.com/checkout/buy/abc-def-ghi",
+  "expires_at": "2026-04-24T10:00:00Z"
+}
+```
+
+## Flow
+
+```
+1. User clicks "Buy Now" on /products
+2. Client POSTs /api/commerce/checkout with variant_id
+3. Backend:
+   - Decrypts the user's (merchant's) LS API key
+   - Calls LS API: POST /checkouts with options
+   - Returns checkout_url
+4. Client redirects window.location to checkout_url
+5. User fills form + pays in the LS UI
+6. LS redirects the user to your success_url with query params (order id, etc.)
+7. Separately, LS sends the order_created webhook to the app
+8. App upserts to commerce_orders → UI at /orders auto-updates
+```
+
+## Customize Checkout
+
+The LS API supports many options. Common ones:
+
+### Prefill Email / Name
+
+```ts
+POST /checkouts
+Body: {
+  data: {
+    attributes: {
+      checkout_data: {
+        email: "user@example.com",
+        name: "John Doe"
+      },
+      product_options: {...},
+    },
+    relationships: {
+      store: { data: { type: "stores", id: storeId } },
+      variant: { data: { type: "variants", id: variantId } },
+    }
+  }
+}
+```
+
+Prefill reduces friction for logged-in users (use the email from the session).
+
+### Discount Code
+
+```ts
+checkout_options: {
+  discount_code: "LAUNCH50"
+}
+```
+
+The discount must already exist in the LS Dashboard → Discounts.
+
+### Pass Metadata (Custom Data)
+
+```ts
+checkout_data: {
+  custom: {
+    referrer: "email_campaign_april",
+    source: "landing_page_v2"
+  }
+}
+```
+
+The `custom` field comes back in the webhook payload → queryable from `commerce_orders.metadata`:
+
+```ts
+// In the webhook handler
+const order = {
+  ...,
+  metadata: {
+    custom: payload.data.attributes.first_order_item.meta.custom_data
+  }
+};
+```
+
+Use cases: attribution, A/B test tracking, referral programs.
+
+### Customize Trial Period
+
+```ts
+checkout_options: {
+  trial_period_days: 14
+}
+```
+
+Overrides the product's default trial period.
+
+### Redirect After Success
+
+```ts
+product_options: {
+  redirect_url: "https://yourdomain.com/thankyou?order_id={{order_id}}"
+}
+```
+
+LS substitutes `{{order_id}}` with the actual order ID. Useful for gtag / analytics tracking.
+
+## Checkout Flow UI
+
+### Simple (Current Boilerplate)
+
+```tsx
+async function onBuyClick(variantId: string) {
+  const res = await fetch("/api/commerce/checkout", {
+    method: "POST",
+    body: JSON.stringify({ variant_id: variantId }),
+  });
+  const { checkout_url } = await res.json();
+  window.location.href = checkout_url;
+}
+```
+
+Users are redirected directly. Easy, but takes them out of the app.
+
+### Embedded Checkout (Advanced)
+
+LS supports embedded checkout via modal / iframe. Users don't leave the app:
+
+```tsx
+import { LemonSqueezy } from "@lemonsqueezy/lemonsqueezy.js";
+
+async function onBuyClick(variantId: string) {
+  const res = await fetch("/api/commerce/checkout", {
+    method: "POST",
+    body: JSON.stringify({ variant_id: variantId, embed: true }),
+  });
+  const { checkout_url } = await res.json();
+
+  // Open in a modal / iframe
+  window.LemonSqueezy.Url.Open(checkout_url);
+}
+```
+
+Requires:
+
+1. Install the `@lemonsqueezy/lemonsqueezy.js` SDK
+2. Include the LS embedded script in the layout
+3. Set up callbacks for `Checkout.Success`, `Checkout.Close` events
+
+Trade-off: smoother UX, but adds 1 JS dependency + complexity. The boilerplate defaults to redirect — simpler.
+
+## Security
+
+### Rate Limit
+
+Prevent abuse (e.g. spamming `/api/commerce/checkout` to generate URLs):
+
+```ts
+// Pseudo
+const key = `checkout:${userId || req.ip}`;
+const count = await redis.incr(key);
+await redis.expire(key, 60);  // reset every minute
+
+if (count > 10) {
+  return new Response("rate limited", { status: 429 });
+}
+```
+
+The boilerplate doesn't include a rate limiter by default — implement it yourself (Upstash Redis, Vercel KV, etc.).
+
+### Prevent Wrong-User Charge
+
+The backend validates that the variant_id exists in the user's store before generating the checkout:
+
+```ts
+const product = await ls.products.get(variantId);
+if (product.store_id !== user.lemonsqueezy_store_id) {
+  throw new Error("Variant not found in your store");
+}
+```
+
+Edge case — but cleaner code.
+
+## Checkout Link Sharing
+
+Checkout URLs can be shared via email / direct link:
+
+- User generates a checkout link → copies to clipboard
+- Sends to a prospect via email
+- Prospect clicks → pays
+
+This is an "invoice-like" pattern — good for B2B where merchants generate a link per customer request.
+
+Implementation:
+
+1. UI: "Generate Checkout Link" button on the product page
+2. Backend: generate URL without prefill (or prefill based on input)
+3. Copy to clipboard, share manually
+
+## Trial / Free Plan (No Payment)
+
+If you have a free plan that doesn't need payment:
+
+- Skip the checkout flow
+- Directly create a "subscription" in the DB with `status = 'active'`, `total_amount = 0`
+- User gets feature access without LS
+
+⚠️ **Not a real LS subscription.** LS doesn't know this user is subscribed. Use this only for internal free-tier logic.
+
+## Troubleshoot
+
+### Checkout URL Returns 404 When User Opens
+
+- URL expired (> 24 hours)
+- LS account suspended / store offline
+- `variant_id` was deleted in LS
+
+Regenerate the URL on error. Show an error UI instead of a broken link.
+
+### User Paid Successfully but Order Didn't Land in DB
+
+- Webhook not set up → [Commerce Webhooks](/docs/commerce/webhooks)
+- Webhook 401 because HMAC is wrong
+- Check LS Dashboard → Webhook → Delivery log
+
+### Redirect After Success Doesn't Work
+
+- `redirect_url` wasn't passed in the request payload
+- URL format wrong (must be absolute with a scheme)
+- LS is whitelisting the redirect URL — check Dashboard → Settings → Security
+
+### Discount Code Doesn't Apply
+
+- The discount code in LS is expired / used up
+- Country mismatch (some discounts are region-limited)
+- Check Dashboard → Discounts → verify status

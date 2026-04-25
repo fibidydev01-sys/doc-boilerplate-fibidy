@@ -1,0 +1,155 @@
+---
+title: Overview
+description: "Extension point — guide to integrating analytics into the boilerplate"
+---
+
+> ⏳ **Extension Point — Not Included.**
+>
+> The boilerplate is FINAL at Phase 2 and **does not ship** analytics integration. This page is reference documentation.
+
+## Data You Already Have (No Additions Required)
+
+The boilerplate already tracks several things natively:
+
+- **`activity_logs`** — audit trail for user actions (login, signup, order received, etc.). Details in [Activity Logging](/docs/activity-logging)
+- **Supabase Auth logs** — via the Supabase Dashboard
+- **Vercel Analytics** (if enabled) — Web Vitals + basic pageviews
+
+If that's enough, **you may not need an analytics vendor**. Query `activity_logs` for:
+
+- Daily active users (distinct `user_id` with action `user.login`)
+- Retention (users returning within N days)
+- Commerce metrics (order count, revenue, MRR from `commerce_orders` + `commerce_subscriptions`)
+
+Add an analytics vendor when you need:
+
+- **Funnel analysis** — full step-by-step conversion
+- **Cohort analysis** — retention + behavior over time
+- **Session recording** — replay user sessions
+- **A/B testing** — split tests + statistical significance
+- **Attribution** — tracking source (UTM, referrer)
+
+## Vendor Options
+
+| Vendor | Focus | Free Tier | Privacy |
+|---|---|---|---|
+| **Vercel Analytics** | Web Vitals, pageviews | Limited | ✓ |
+| **PostHog** | Product analytics, session replay, A/B | 1M events/month | ✓ (self-host option) |
+| **Plausible** | Privacy-first, simple pageviews | — paid | ✓ (EU, cookieless) |
+| **Fathom** | Privacy-first | — paid | ✓ |
+| **Mixpanel** | Event-based, cohorts | 20M events/month | Moderate |
+| **Amplitude** | Product analytics | 50K users | Moderate |
+| **Google Analytics 4** | General web analytics | Unlimited | Weak (GDPR complex) |
+
+## Integration Patterns
+
+### 1. Client-Side Event Tracking
+
+Load the vendor script in the layout and fire events on user actions:
+
+```tsx
+// src/app/layout.tsx
+import Script from "next/script";
+
+<Script src="https://..." strategy="afterInteractive" />
+```
+
+Track an event:
+
+```tsx
+"use client";
+import { track } from "@/shared/analytics";
+
+function CheckoutButton() {
+  const onCheckout = () => {
+    track("checkout_initiated", { product_id: "xxx", amount: 19 });
+    router.push(checkoutUrl);
+  };
+  return <button onClick={onCheckout}>Checkout</button>;
+}
+```
+
+### 2. Server-Side Tracking (Recommended)
+
+Browser-side tracking is blocked by many ad blockers and cookieless browsers. Server-side is more reliable:
+
+```ts
+// src/app/api/commerce/checkout/route.ts
+import { trackServerEvent } from "@/shared/analytics/server";
+
+await trackServerEvent(user.id, "checkout_initiated", {
+  product_id: variantId,
+  amount,
+});
+```
+
+**Trade-off:**
+
+- Server-side can't track passive events (pageview, click, scroll) — needs a client
+- Best combo: server-side for key events (purchase, signup), client-side for engagement
+
+### 3. Data Warehouse (Advanced)
+
+When privacy is ultra-strict or scale is large:
+
+- **Self-hosted PostHog** on Supabase or a separate DB
+- **Custom analytics tables** in Supabase — extend `activity_logs` or add `analytics_events`
+- **ETL to a warehouse** (BigQuery, Snowflake) for business intelligence
+
+Significant overhead — only worth it at enterprise scale.
+
+## Common Events to Track
+
+### Auth
+
+- `user_signed_up` — method (email/oauth), referrer
+- `user_logged_in` — method
+- `user_logged_out`
+- `password_reset_requested`
+- `email_verified`
+
+### Commerce
+
+- `product_viewed` — product_id, variant_id, price
+- `checkout_initiated` — product_id, amount
+- `checkout_completed` — order_id, amount (server-side, via webhook)
+- `subscription_started` — plan, interval, amount
+- `subscription_cancelled` — plan, reason
+
+### Engagement
+
+- `feature_used` — feature_name, context
+- `page_viewed` — path, referrer (usually auto by vendor)
+- `link_clicked` — url, source_page
+- `form_submitted` — form_name
+
+## Privacy & Consent
+
+### GDPR / Cookie Law
+
+If your users are in the EU / California:
+
+- Consent banner before loading analytics scripts
+- Opt-in (default off), not opt-out
+- Anonymize IP
+- Respect the `Do Not Track` header
+
+Privacy-first vendors (Plausible, Fathom, PostHog) are cookieless — no consent banner required.
+
+### Personal Data
+
+Never send to analytics vendors:
+
+- Email, phone, address
+- Credit card
+- Password / tokens
+- Full name unless the user explicitly opts in
+
+Use a `user_id` (uuid) as the identifier, not email. If the vendor supports `identify()` separately, keep the mapping internal.
+
+## Related Docs
+
+- [Setup](/docs/analytics/setup) — integration examples (PostHog, Vercel Analytics)
+- [Usage](/docs/analytics/usage) — event tracking patterns, naming conventions
+
+**Remember:** all of this is a guide for your fork — the boilerplate default doesn't ship analytics.

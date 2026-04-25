@@ -1,0 +1,196 @@
+---
+title: Adding OAuth Providers
+description: Pattern for adding new OAuth providers (GitHub, Apple, Facebook, etc.)
+---
+
+By default, the boilerplate ships only Google OAuth. Adding other providers (GitHub, Apple, Facebook, Discord, etc.) takes 6 steps — the pattern is the same for every provider.
+
+## Providers Supported by Supabase
+
+Supabase supports dozens of OAuth providers — see the [Supabase Social Login docs](https://supabase.com/docs/guides/auth/social-login).
+
+Popular examples:
+
+- GitHub — simple, developer-friendly
+- Apple — required for iOS companions (Apple App Store requirement)
+- Facebook — consumer apps
+- Discord — gaming / community
+- Twitter / X — social media
+- LinkedIn — professional
+- Microsoft / Azure — enterprise
+
+## The 6-Step Pattern
+
+We'll use GitHub as the example. The pattern is identical for other providers.
+
+### Step 1 — Set Up in the Provider Dashboard
+
+**GitHub example:**
+
+1. [github.com/settings/developers](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**
+2. **Application name**: your app's name
+3. **Homepage URL**: `https://your-domain.com`
+4. **Authorization callback URL**:
+   ```
+   https://<YOUR_PROJECT_REF>.supabase.co/auth/v1/callback
+   ```
+   > ⚠️ Supabase URL, not your app URL. Same as Google OAuth.
+5. Register → copy the **Client ID** + generate a **Client Secret**
+
+For other providers, follow their docs — but the callback URL is always the Supabase URL, never your app URL.
+
+### Step 2 — Enable in Supabase
+
+1. Supabase Dashboard → **Authentication** → **Providers**
+2. Find the provider to enable (scroll or search)
+3. Toggle **Enabled** ✓
+4. Paste Client ID + Client Secret
+5. **Save**
+
+### Step 3 — Update the App Config
+
+In `src/config/app.config.ts`:
+
+```ts
+auth: {
+  oauthProviders: ["google", "github"] as const,  // ← add "github"
+  // ...
+}
+```
+
+The `OAuthProvider` type auto-includes `"github"` because it's derived from this array.
+
+### Step 4 — Register the Icon + Label
+
+Edit `src/core/auth/components/providers/oauth-config.tsx`:
+
+```tsx
+import type { OAuthProvider } from "@/config";
+import type { TranslationKey } from "@/core/i18n";
+import { GoogleIcon } from "./oauth-button";
+import { GithubIcon } from "./github-icon";  // ← create this file
+
+interface OAuthProviderMeta {
+  loginLabelKey: TranslationKey;
+  signupLabelKey: TranslationKey;
+  icon: React.ReactNode;
+}
+
+export const oauthProviderConfig: Record<OAuthProvider, OAuthProviderMeta> = {
+  google: {
+    loginLabelKey: "auth.signInWithGoogle",
+    signupLabelKey: "auth.signUpWithGoogle",
+    icon: <GoogleIcon />,
+  },
+  github: {
+    loginLabelKey: "auth.signInWithGithub",
+    signupLabelKey: "auth.signUpWithGithub",
+    icon: <GithubIcon />,
+  },
+};
+```
+
+### Step 5 — Create the Icon Component
+
+Create `src/core/auth/components/providers/github-icon.tsx`:
+
+```tsx
+export const GithubIcon = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path
+      fill="currentColor"
+      d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.6.11.793-.26.793-.577..."
+    />
+  </svg>
+);
+```
+
+Grab SVGs from [simpleicons.org](https://simpleicons.org) or the provider's brand guidelines.
+
+### Step 6 — Add i18n Keys
+
+Edit `src/core/i18n/locales/id.json`:
+
+```json
+{
+  "auth": {
+    "signInWithGoogle": "Masuk dengan Google",
+    "signUpWithGoogle": "Daftar dengan Google",
+    "signInWithGithub": "Masuk dengan GitHub",
+    "signUpWithGithub": "Daftar dengan GitHub"
+  }
+}
+```
+
+And `en.json`:
+
+```json
+{
+  "auth": {
+    "signInWithGithub": "Sign in with GitHub",
+    "signUpWithGithub": "Sign up with GitHub"
+  }
+}
+```
+
+TypeScript auto-updates the `TranslationKey` type — if you forget to add the keys, you'll get a compile error.
+
+## Done
+
+LoginForm + RegisterForm automatically render the new button. **No need to edit form files.**
+
+```tsx
+// LoginForm (simplified, already shipped)
+{oauthProviders.map((provider) => {
+  const config = oauthProviderConfig[provider];
+  return (
+    <OAuthButton
+      key={provider}
+      provider={provider}
+      label={t(config.loginLabelKey)}
+      icon={config.icon}
+      returnTo={returnTo}
+    />
+  );
+})}
+```
+
+## Apple OAuth — Special Notes
+
+Apple OAuth has a different setup from other providers:
+
+- Requires a paid **Apple Developer Account** ($99/year)
+- Setup **Service ID** + **Services Key** + **Private Key** in the Apple Developer Portal
+- Domain verification via the `apple-app-site-association` file (for iOS universal links)
+- The client secret isn't a static string — you have to **generate a JWT** periodically using the `.p8` private key
+
+If your target is web-only (no iOS companion), **Apple OAuth usually isn't worth it** — high setup overhead, and users rarely pick Apple over Google/GitHub on the web.
+
+**When you need Apple OAuth:**
+
+- Your app has a native iOS companion — Apple mandates it on iOS App Store submissions if you have Google/Facebook OAuth
+- Target audience heavy in the Apple ecosystem (US consumers)
+- Enterprise clients require "Sign in with Apple ID" compliance
+
+Supabase docs: [Sign in with Apple](https://supabase.com/docs/guides/auth/social-login/auth-apple).
+
+Boilerplate integration: follow the 6-step pattern above, add `"apple"` to `oauthProviders` + implement an `AppleIcon` component.
+
+## Troubleshoot
+
+### `redirect_uri_mismatch` at the provider
+
+The callback URL in the provider dashboard must be the **Supabase URL**, not your app URL:
+
+```
+https://<PROJECT_REF>.supabase.co/auth/v1/callback
+```
+
+### The button shows in the UI but clicking it does nothing
+
+- `oauthProviders` array updated but `oauthProviderConfig` doesn't have an entry for the provider → icon is undefined → silent render fail
+- Check the browser console for errors
+
+### TypeScript error: `Property 'github' is missing in type`
+
+`oauthProviderConfig` uses `Record<OAuthProvider, OAuthProviderMeta>` — if you add a provider in config but forget to register it in `oauthProviderConfig`, TypeScript complains. This is intentional — it forces registration to prevent silent failures.

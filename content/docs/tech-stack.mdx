@@ -1,0 +1,122 @@
+---
+title: Tech Stack
+description: Every technology used in this boilerplate, with a brief rationale
+---
+
+The stack was chosen on three criteria: mature, production-proven, and minimal vendor lock-in.
+
+## Framework & Runtime
+
+| Layer | Tech | Version |
+|---|---|---|
+| Framework | Next.js | 16.1.1 (App Router) |
+| UI library | React | 19.2.3 |
+| Language | TypeScript | 5.x strict mode |
+| Runtime | Node.js | ≥ 20.x LTS |
+| Package manager | pnpm | 9.x |
+
+**Why Next.js App Router?** Server Components are mature, streaming is built in, and deployment to Vercel is zero-config. React 19 brings new hooks (`use()`, `useActionState`) that we use in form handling.
+
+> **pnpm, not npm.** The boilerplate uses pnpm. If you force npm, installation may work but isn't tested — peer dependency warnings can turn into real errors.
+
+## Backend as a Service
+
+| Layer | Tech |
+|---|---|
+| Database | Supabase Postgres 15 |
+| Auth | Supabase Auth (JWT + OAuth + magic link + Send Email Hook) |
+| Storage | Supabase Storage (`avatars` bucket) |
+| Realtime | Supabase Realtime (ready, not yet used) |
+
+**Why Supabase?** Native Postgres (not a proprietary NoSQL), RLS written in standard SQL, and the `@supabase/ssr` SDK has first-class support for the Next.js App Router.
+
+## Email
+
+| Layer | Tech |
+|---|---|
+| Provider | Resend |
+| Templates | `@react-email/components` |
+| Rendering | `@react-email/render` |
+| Webhook verification | `standardwebhooks` |
+
+Supabase's default SMTP is limited to 3 emails per hour with poor deliverability. Resend replaces it via the Supabase Send Email Hook. Details in [Email Overview](/docs/email/overview).
+
+> ⚠️ **Default email templates are in Indonesian.** Subject lines and body copy are hardcoded. To ship to English-speaking users, edit the 5 templates in `src/shared/email/templates/` + the `getSubject()` function in `src/shared/email/send-auth-email.tsx`. See [Email Templates → Internationalization](/docs/email/templates#internationalization-hardcoded).
+
+## Commerce
+
+| Layer | Tech |
+|---|---|
+| Provider | Lemon Squeezy |
+| Integration | Custom thin wrapper (no official SDK) |
+| Webhook verification | Native Node `crypto` (HMAC-SHA256) |
+| Encryption | Native Node `crypto` (AES-256-GCM) |
+
+**Why Lemon Squeezy instead of Stripe?** LS is a Merchant of Record — they handle tax, VAT, and sales tax across jurisdictions. You don't deal with compliance. Trade-off: higher fees and a smaller feature set.
+
+## UI & Styling
+
+| Tech | Purpose |
+|---|---|
+| Tailwind CSS v4 | Styling (config-less, CSS variable-driven) |
+| Radix UI | Headless primitives (dialog, popover, select, etc.) |
+| shadcn/ui | Component pattern (copied into the repo, not an npm dependency) |
+| lucide-react | Icon set |
+| tw-animate-css | Animation utilities |
+| sonner | Toast notifications |
+| vaul | Drawer |
+| cmdk | Command palette |
+| next-themes | Dark mode support |
+| react-day-picker + date-fns | Date picker |
+
+**shadcn/ui isn't an npm dependency.** Components are copied into `src/components/ui/` during install. You have full control to edit them.
+
+## State & Forms
+
+| Scope | Tech |
+|---|---|
+| Client global state | Zustand 5 (only for the auth store) |
+| Server state | React Server Components |
+| Form state | React Hook Form 7 + `@hookform/resolvers` |
+| Schema validation | Zod v4 |
+
+Zod v4 has breaking changes from v3 (especially `.default()` behavior). The boilerplate handles this in `validators.ts`.
+
+## Internationalization
+
+Custom `t()` helper in `src/core/i18n/` — no runtime library (no `react-i18next`, no `next-intl`).
+
+- **Default locale: `id`** (Indonesian). Change `appConfig.locale.default` to `"en"` if targeting English users.
+- **Available locales:** `id`, `en` (both bundled in `src/core/i18n/locales/`).
+- Type-safe keys derived from `id.json` — typos caught at compile time.
+
+⚠️ **Email templates are NOT routed through this i18n layer** — they're hardcoded Indonesian. Translate manually if needed.
+
+Details in [Internationalization](/docs/internationalization).
+
+## Developer Experience
+
+- ESLint 9 via `eslint-config-next`
+- TypeScript strict mode
+- Path alias `@/*` → `./src/*`
+- Auto-generated Supabase types via `npx supabase gen types typescript`
+
+## Deployment Target
+
+- **Vercel** — default, zero-config, officially supported by Next.js
+- **Alternatives:** Netlify, Railway, Render, Fly.io, Cloud Run, self-hosted Docker
+
+Details in [Deployment](/docs/deployment/vercel).
+
+## Intentionally NOT Used
+
+| Tool | Why we skip it |
+|---|---|
+| tRPC | Server Actions + Route Handlers already cover this |
+| Prisma / Drizzle | Supabase SDK is already type-safe via the generated `Database` type |
+| Redux / Jotai | Zustand is a one-file solution, sufficient for the boilerplate's scope |
+| NextAuth | Supabase Auth already handles JWT, OAuth, magic link, and hooks |
+| Stripe | Lemon Squeezy is MoR — saves you from tax compliance hell |
+| `next-intl` / `react-i18next` | A custom `t()` function in `src/core/i18n/` is enough, with zero runtime deps |
+
+If you need any of these, just install and integrate — the boilerplate doesn't lock you in.

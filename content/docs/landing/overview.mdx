@@ -1,0 +1,207 @@
+---
+title: Overview
+description: Public marketing surface — hero, pricing, FAQ, and legal pages, ready to customize
+---
+
+The landing module owns the public-facing marketing surface — the home page, pricing page, and legal documents. It ships as a **generic SaaS template** that's honest about what the boilerplate actually provides, ready to be customized into your product's pitch.
+
+## Status
+
+✅ **Fully implemented.** Drop in your product copy + checkout URLs and ship. Five legal page templates included, all describing the data flows that actually exist in the codebase.
+
+## Pages Shipped
+
+| Route | Composition |
+|---|---|
+| `/` | Hero → Features (4 tabs) → Pricing → FAQ → Final CTA |
+| `/pricing` | Pricing → FAQ → Final CTA |
+| `/legal/privacy-policy` | Privacy Policy template |
+| `/legal/terms` | Terms of Service template |
+| `/legal/license` | End-User License template |
+| `/legal/disclaimer` | Disclaimer template |
+| `/legal/acceptable-use` | Acceptable Use Policy template |
+
+Layout (header + footer) is shared via `src/app/(marketing)/layout.tsx` and renders on every page in this group.
+
+## Framing — Generic SaaS Template, Not Marketing Pitch
+
+The default copy describes capabilities that **actually exist** in the running boilerplate:
+
+- **Hero** — auth-first framing ("sign in, manage your account, start selling"). CTAs go to `/register` and `/login`.
+- **Features** — 4 tabs mapping to real codebase capabilities: Authentication, Commerce, Permissions, Dashboard. Every bullet is something the code actually does.
+- **Pricing** — three-tier classic placeholder (Free / $19 Pro / $99 Business) with realistic feature lists.
+- **FAQ** — 9 generic SaaS questions tied to the actual flows: auth methods, password reset, payments, security, refunds, contact.
+- **Legal** — 5 templates that describe Supabase + Lemon Squeezy + Resend data flows, AES-256-GCM encryption, signed webhooks.
+
+This is a **starting point**, not finished marketing. Replace the copy in `content/*.ts` with your own product pitch when you're ready to launch.
+
+> ⚠️ **Legal templates are NOT legal advice.** They describe the codebase accurately, but every jurisdiction has its own requirements. Have a qualified lawyer review before publishing.
+
+## Module Structure
+
+```
+src/modules/landing/
+├── components/
+│   ├── layout/             ← MarketingHeader, MarketingFooter
+│   ├── legal/              ← LegalContent, LegalSidebar
+│   ├── primitives/         ← CheckItem, FaqList, FeatureBullet, PriceCard, TrustBadge
+│   └── sections/           ← HeroSection, FeaturesSection, PricingSection, FaqSection, FinalCtaSection
+├── content/
+│   ├── legal/              ← 5 legal page content files + index registry
+│   ├── faq.ts              ← FAQ items
+│   ├── features.ts         ← 4 feature tabs
+│   ├── hero.ts             ← Hero copy
+│   ├── layout.ts           ← Header, footer, final CTA copy
+│   └── pricing.ts          ← Pricing tiers
+├── lib/
+│   ├── index.ts            ← formatPrice, scrollToSection
+│   └── interpolate-brand.ts ← {appName} → brandingConfig.name
+├── types.ts                ← Content type definitions
+├── module.config.ts        ← Section toggles
+└── index.ts                ← Public API barrel
+```
+
+The reference module is now `commerce/` (services + API endpoints) and `landing/` (content + sections). Both are production-ready, both follow the same module structure conventions.
+
+## Architecture — Content Outside JSX
+
+Marketing copy lives in `content/*.ts` as plain `export const` objects. Section components are thin wrappers that render data + primitives. Editing copy never touches JSX:
+
+```ts
+// content/hero.ts
+export const heroContent: HeroContent = {
+  badge: "Now in beta",
+  headline: {
+    prefix: "Your product,",
+    highlight: "ready",
+    suffix: "from day one.",
+  },
+  subtitle: "Sign in, manage your account, ... — {appName} ships with everything wired up.",
+  // ...
+};
+```
+
+```tsx
+// components/sections/hero-section.tsx
+export function HeroSection() {
+  const content = interpolateBrand(heroContent, brandingConfig.name);
+  return (
+    <section>
+      <h1>{content.headline.prefix} <em>{content.headline.highlight}</em> {content.headline.suffix}</h1>
+      <p>{content.subtitle}</p>
+      {/* ... */}
+    </section>
+  );
+}
+```
+
+Why this split:
+
+- **Editing copy is non-technical.** Designers / writers can edit `content/*.ts` without touching JSX
+- **Diff-friendly.** Reviewers see copy changes in isolation
+- **Portable.** Content data files can move between projects without dragging JSX
+
+## `{appName}` Interpolation
+
+Brand name appears dozens of times in prose. To stay env-driven without polluting content files with imports, every `{appName}` placeholder is replaced at server-render time via `interpolateBrand()`:
+
+```ts
+// Inside any section component
+const content = interpolateBrand(heroContent, brandingConfig.name);
+```
+
+The helper walks strings, arrays, and nested objects recursively — works on any content shape. Other env values (support email, jurisdiction) are read directly inside content files via template literals because they appear less frequently and live in structured fields.
+
+Details on `brandingConfig`: [Branding](/docs/configuration/branding).
+
+## Section Toggles
+
+`module.config.ts` controls which sections render on the home page:
+
+```ts
+export const landingModuleConfig = {
+  // ...
+  features: {
+    hero: true,
+    features: true,
+    pricing: true,
+    faq: true,
+    finalCta: true,
+  },
+} as const;
+```
+
+Toggle a section off → it's skipped at render. Useful for split-testing or for variants where one section doesn't make sense yet (e.g. hide pricing while still in private beta).
+
+The `/pricing` and `/legal/*` routes are independent and always render — they're standalone pages with their own route files.
+
+## Legal Sidebar — Auto-Renders
+
+The legal sidebar (`<LegalSidebar />`) renders nav links automatically from a registry:
+
+```ts
+// content/legal/index.ts
+export const legalPageOrder: Array<keyof typeof legalPages> = [
+  "privacy-policy",
+  "terms",
+  "license",
+  "disclaimer",
+  "acceptable-use",
+];
+```
+
+Adding a new legal page:
+
+1. Create `content/legal/<slug>.ts` (export `LegalPage` shape)
+2. Register in `content/legal/index.ts` (`legalPages` map + `legalPageOrder` array)
+3. Create `src/app/(marketing)/legal/<slug>/page.tsx` (route file)
+
+The sidebar picks it up automatically. No edits to layout / sidebar component needed.
+
+## Env Variables Used
+
+All env-driven, no hardcoded brand identity in marketing components:
+
+| Variable | Used by |
+|---|---|
+| `NEXT_PUBLIC_APP_NAME` | Every `{appName}` in content files |
+| `NEXT_PUBLIC_APP_SHORT_NAME` | Header logo aria-label, mobile sheet header |
+| `NEXT_PUBLIC_APP_DESCRIPTION` | `(marketing)/layout.tsx` metadata description |
+| `NEXT_PUBLIC_APP_SUPPORT_EMAIL` | Footer contact, every legal page contact block |
+| `NEXT_PUBLIC_APP_LEGAL_JURISDICTION` | Terms of Service governing law clause |
+| Logo files in `public/branding/` | Hero, Final CTA, Header, Footer |
+
+Details: [Environment Variables](/docs/environment-variables).
+
+## What's NOT Here
+
+The default landing module **does not** include:
+
+- Testimonials section — would require real customer quotes; placeholder testimonials would mislead first-time visitors
+- Showcase / portfolio section — no showcase exists for a fresh deploy
+- Blog index — covered by the `blog` module slot (placeholder, not implemented)
+- Email capture / newsletter signup form — wire your own when you have a marketing list
+- Animations beyond simple hover transitions — keep first paint fast; add motion library later if needed
+
+To add any of these, build a new section component in `components/sections/`, register it in the home page composition, and add a content file in `content/`.
+
+## When to Disable the Module
+
+The whole module can be turned off via `appConfig.modules.landing.enabled = false`. Useful when:
+
+- Building a dashboard-only tool (internal admin, B2B with no public marketing)
+- Replacing the marketing surface with a separate static site (Astro, Webflow, etc.) hosted on a different domain
+
+When disabled:
+
+- Routes in `src/app/(marketing)/` still exist and render — Next.js doesn't know about the toggle. Delete the `(marketing)/` route group if you truly want them gone.
+- Module imports keep working (the toggle is informational, not a tree-shake)
+
+The flag is for nav rendering and conditional logic in code that reads `isModuleEnabled('landing')`.
+
+## Related Docs
+
+- [Customization](/docs/landing/customization) — replace default copy, wire pricing CTAs to checkout
+- [Legal Pages](/docs/landing/legal-pages) — what each template covers, when to extend
+- [Branding](/docs/configuration/branding) — env-driven brand identity used by this module
+- [Module System](/docs/architecture/module-system) — how all 8 modules fit together
