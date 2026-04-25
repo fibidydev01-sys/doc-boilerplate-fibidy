@@ -1,160 +1,161 @@
-// ==========================================
-// SERVICE WORKER - FIBIDY PWA
-// Basic caching strategy for offline support
-// ==========================================
+// ============================================================
+// SERVICE WORKER — Boilerplate Docs
+//
+// Strategy:
+//   - Network-first for HTML / navigation (always try fresh docs)
+//   - Cache-first for branding assets (immutable-ish)
+//   - Pass-through for everything else (Next handles caching well)
+//
+// Push notifications & background sync intentionally omitted —
+// not needed for a docs site, and removing them keeps the SW
+// lifecycle simple.
+//
+// CACHE_VERSION should be bumped on every release that ships
+// SW-cacheable changes. With Vercel/Next, file content hashes
+// already cover JS/CSS — so version bumps here are mainly for
+// when you change THIS file or precache list.
+// ============================================================
 
-const STATIC_CACHE = 'fibidy-static-v1';
-const DYNAMIC_CACHE = 'fibidy-dynamic-v1';
+const CACHE_VERSION = 'v1';
+const STATIC_CACHE = `docs-static-${CACHE_VERSION}`;
+const RUNTIME_CACHE = `docs-runtime-${CACHE_VERSION}`;
 
-// Static assets to cache
-const STATIC_ASSETS = [
+// Minimal precache — just the shell + favicon variants the
+// browser may request before any navigation completes.
+const PRECACHE_URLS = [
   '/',
   '/manifest.json',
-  '/favicon.ico',
-  '/icon.png',
-  '/apple-icon.png',
+  '/branding/favicon.ico',
+  '/branding/favicon-32x32.png',
+  '/branding/favicon-96x96.png',
+  '/branding/favicon-128.png',
+  '/branding/favicon-196x196.png',
 ];
 
-// ==========================================
-// INSTALL EVENT
-// ==========================================
+// ============================================================
+// INSTALL — precache shell
+// ============================================================
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing...');
-
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      console.log('[SW] Caching static assets');
-      return cache.addAll(STATIC_ASSETS);
-    })
+    caches
+      .open(STATIC_CACHE)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .catch((err) => {
+        // Don't fail install if a single asset 404s — log and move on
+        console.warn('[SW] Precache partial failure:', err);
+      })
   );
-
-  // Activate immediately
   self.skipWaiting();
 });
 
-// ==========================================
-// ACTIVATE EVENT
-// ==========================================
+// ============================================================
+// ACTIVATE — drop old caches
+// ============================================================
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating...');
-
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
+    caches.keys().then((keys) =>
+      Promise.all(
         keys
-          .filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE)
-          .map((key) => {
-            console.log('[SW] Deleting old cache:', key);
-            return caches.delete(key);
-          })
-      );
-    })
+          .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+          .map((key) => caches.delete(key))
+      )
+    )
   );
-
-  // Claim all clients immediately
   self.clients.claim();
 });
 
-// ==========================================
-// FETCH EVENT
-// ==========================================
+// ============================================================
+// FETCH — strategy router
+// ============================================================
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const url = new URL(request.url);
 
-  // Skip non-GET requests
+  // Only handle GET — POST/PUT/etc bypass SW
   if (request.method !== 'GET') return;
 
-  // Skip API requests (always fetch fresh)
-  if (url.pathname.startsWith('/api/')) {
+  const url = new URL(request.url);
+
+  // Skip cross-origin (Google Fonts, etc) — let browser handle
+  if (url.origin !== self.location.origin) return;
+
+  // Skip Next internals & search API — they have their own
+  // cache-control semantics that we shouldn't fight.
+  if (
+    url.pathname.startsWith('/_next/') ||
+    url.pathname.startsWith('/api/')
+  ) {
     return;
   }
 
-  // Skip external requests
-  if (url.origin !== location.origin) {
+  // Branding assets — cache-first (rarely change)
+  if (url.pathname.startsWith('/branding/')) {
+    event.respondWith(cacheFirst(request));
     return;
   }
 
-  event.respondWith(
-    // Network first, fallback to cache
-    fetch(request)
-      .then((response) => {
-        // Clone response for caching
-        const responseClone = response.clone();
+  // HTML / navigation — network-first (docs change, freshness matters)
+  if (
+    request.mode === 'navigate' ||
+    request.headers.get('accept')?.includes('text/html')
+  ) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
 
-        // Cache successful responses
-        if (response.ok) {
-          caches.open(DYNAMIC_CACHE).then((cache) => {
-            cache.put(request, responseClone);
-          });
-        }
-
-        return response;
-      })
-      .catch(() => {
-        // Fallback to cache
-        return caches.match(request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-
-          // Return offline page for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match('/');
-          }
-
-          return new Response('Offline', {
-            status: 503,
-            statusText: 'Service Unavailable',
-          });
-        });
-      })
-  );
+  // Other GET (images, etc) — network-first with cache fallback
+  event.respondWith(networkFirst(request));
 });
 
-// ==========================================
-// PUSH NOTIFICATION (Future feature)
-// ==========================================
-self.addEventListener('push', (event) => {
-  if (!event.data) return;
+// ============================================================
+// STRATEGIES
+// ============================================================
+async function networkFirst(request) {
+  try {
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) {
+      const cache = await caches.open(RUNTIME_CACHE);
+      cache.put(request, fresh.clone());
+    }
+    return fresh;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
 
-  const data = event.data.json();
+    // Last-resort offline fallback for navigations: serve cached "/"
+    if (request.mode === 'navigate') {
+      const home = await caches.match('/');
+      if (home) return home;
+    }
 
-  const options = {
-    body: data.body || 'Anda memiliki notifikasi baru',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
-    vibrate: [100, 50, 100],
-    data: {
-      url: data.url || '/',
-    },
-  };
+    return new Response('Offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+}
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Fibidy', options)
-  );
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) {
+      const cache = await caches.open(STATIC_CACHE);
+      cache.put(request, fresh.clone());
+    }
+    return fresh;
+  } catch {
+    return new Response('', { status: 504, statusText: 'Gateway Timeout' });
+  }
+}
+
+// ============================================================
+// MESSAGE — let pages trigger skipWaiting on update
+// ============================================================
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
-
-// Handle notification click
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  const url = event.notification.data?.url || '/';
-
-  event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
-      // Focus existing window if open
-      for (const client of clientList) {
-        if (client.url === url && 'focus' in client) {
-          return client.focus();
-        }
-      }
-      // Open new window
-      if (clients.openWindow) {
-        return clients.openWindow(url);
-      }
-    })
-  );
-});
-
-console.log('[SW] Service Worker loaded');

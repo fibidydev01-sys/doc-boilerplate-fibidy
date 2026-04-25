@@ -1,122 +1,45 @@
 {
-  "name": "Fibidy - Platform Toko Online UMKM",
-  "short_name": "Fibidy",
-  "description": "Buat toko online profesional dalam hitungan menit. Gratis untuk UMKM Indonesia!",
+  "name": "Boilerplate Docs",
+  "short_name": "Boilerplate",
+  "description": "Full-stack Next.js 16 + Supabase boilerplate — config-driven, module-based, production-ready.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#ffffff",
-  "theme_color": "#ec4899",
-  "lang": "id",
+  "background_color": "#0a0a0f",
+  "theme_color": "#1fd9a0",
+  "lang": "en",
   "dir": "ltr",
   "categories": [
-    "business",
-    "shopping",
+    "developer",
+    "documentation",
     "productivity"
   ],
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/icons/icon-72x72.png",
-      "sizes": "72x72",
+      "src": "/branding/favicon-32x32.png",
+      "sizes": "32x32",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-96x96.png",
+      "src": "/branding/favicon-96x96.png",
       "sizes": "96x96",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-128x128.png",
+      "src": "/branding/favicon-128.png",
       "sizes": "128x128",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-144x144.png",
-      "sizes": "144x144",
+      "src": "/branding/favicon-196x196.png",
+      "sizes": "196x196",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-maskable-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-maskable-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
     }
-  ],
-  "shortcuts": [
-    {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "Buka dashboard toko",
-      "url": "/dashboard",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Produk",
-      "short_name": "Produk",
-      "description": "Kelola produk",
-      "url": "/dashboard/products",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Pesanan",
-      "short_name": "Pesanan",
-      "description": "Lihat pesanan baru",
-      "url": "/dashboard/orders",
-      "icons": [
-        {
-          "src": "/icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    }
-  ],
-  "launch_handler": {
-    "client_mode": "navigate-existing"
-  }
+  ]
 }
