@@ -1,12 +1,13 @@
 import { ImageResponse } from 'next/og'
 
 // ============================================================
-// DEFAULT OPEN GRAPH IMAGE
-// Used for social sharing previews
+// DEFAULT OPEN GRAPH IMAGE — Fibidy Docs
+// Colors: Expo surface-dark (#171717), on-dark (#ffffff), on-dark-soft (#b0b4ba)
+// next/og ImageResponse tidak baca CSS variable runtime — hex literal wajib
 // ============================================================
 
 export const runtime = 'edge'
-export const alt = 'Next.js + Supabase Boilerplate Documentation'
+export const alt = 'Fibidy Docs — Platform UMKM Indonesia'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -15,7 +16,7 @@ export default function Image() {
     (
       <div
         style={{
-          background: '#0a0a0f',
+          background: '#171717',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -30,31 +31,31 @@ export default function Image() {
           style={{
             fontSize: 84,
             fontWeight: 800,
-            color: '#1fd9a0',
+            color: '#ffffff',
             letterSpacing: -2,
           }}
         >
-          Boilerplate
+          Fibidy Docs
         </div>
         <div
           style={{
             fontSize: 34,
-            color: '#f0f0f5',
+            color: '#ffffff',
             marginTop: 16,
             textAlign: 'center',
             fontWeight: 600,
           }}
         >
-          Next.js + Supabase · Production-Ready
+          Platform UMKM Indonesia · Tanpa Komisi
         </div>
         <div
           style={{
             fontSize: 22,
-            color: '#9ca3af',
+            color: '#b0b4ba',
             marginTop: 28,
           }}
         >
-          Config-driven · Module-based · Open source
+          Toko online · Kasir · Stok · Laporan
         </div>
       </div>
     ),

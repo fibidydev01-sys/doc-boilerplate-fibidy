@@ -3,7 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 
 // ============================================================
 // SHARED LAYOUT CONFIG — header for both home and docs
-// Header structure in notebook layout:
+// Header structure:
 //   [Logo]  [Search ⌘K]        [Contact ↗] [🌙 theme]
 // ============================================================
 
@@ -15,11 +15,11 @@ export const baseOptions: BaseLayoutProps = {
       <div className="flex items-center gap-2">
         <div className="h-6 w-6 rounded-[5px] bg-primary flex items-center justify-center shrink-0 shadow-sm">
           <span className="text-primary-foreground text-[11px] font-bold leading-none">
-            B
+            F
           </span>
         </div>
         <span className="font-semibold text-fd-foreground tracking-tight">
-          Boilerplate
+          Fibidy
         </span>
       </div>
     ),
@@ -29,7 +29,7 @@ export const baseOptions: BaseLayoutProps = {
     {
       text: (
         <span className="inline-flex items-center gap-1 text-sm font-medium">
-          Contact
+          Kontak
           <ArrowUpRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
         </span>
       ),

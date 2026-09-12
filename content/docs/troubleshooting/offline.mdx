@@ -1,0 +1,51 @@
+---
+title: Mode Offline
+description: Apa yang terjadi saat koneksi internet terputus — dan kenapa data tetap aman.
+---
+
+# Mode Offline
+
+## Banner Offline
+
+Saat koneksi internet terputus, **banner kuning muncul di bagian atas halaman** — di semua halaman dashboard. Banner ini adalah sinyal bahwa beberapa aksi sementara tidak bisa dilakukan, tapi data kamu tetap aman.
+
+Saat koneksi pulih, banner berubah dan muncul notifikasi **"Kembali online"** — dan kamu bisa lanjut seperti biasa.
+
+## Apa yang Masih Bisa Dilakukan Saat Offline?
+
+| Aksi | Offline |
+|---|---|
+| Membuka halaman yang sudah di-load | ✅ |
+| Melihat data yang sudah tampil | ✅ |
+| Mengisi form | ✅ (tapi belum bisa disimpan) |
+| Menyimpan / submit data | ❌ |
+| Upload foto | ❌ |
+| Publish di Studio | ❌ |
+| Memproses pembayaran di Kasir | ❌ |
+
+## Data Tidak Hilang
+
+Kalau koneksi putus di tengah-tengah pekerjaan:
+- **Form yang sudah diisi** tetap ada di layar — tidak hilang saat koneksi pulih
+- **Keranjang Kasir** tetap ada selama kamu tidak refresh atau tutup browser
+- **Data yang sudah tersimpan sebelumnya** tidak terpengaruh sama sekali
+
+> <IconTip /> **Jangan refresh saat offline.** Halaman yang di-reload saat offline mungkin tidak bisa menampilkan data dengan benar. Tunggu koneksi pulih dulu baru refresh kalau perlu.
+
+## Kenapa "Ada WiFi" Tapi Tetap Offline?
+
+Kadang perangkat terhubung ke WiFi tapi tidak ada akses internet sungguhan — misalnya:
+- WiFi di tempat umum yang minta login dulu (captive portal)
+- Router kamu nyala tapi dari ISP lagi gangguan
+- VPN aktif dan server VPN tidak bisa dijangkau
+
+Fibidy mendeteksi ini dengan cara **probe aktif** (ping ke server tiap beberapa detik) — bukan hanya cek status WiFi. Jadi kalau WiFi nyala tapi server tidak terjangkau, banner offline tetap muncul.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Banner offline tidak hilang padahal sinyal bagus | Coba buka tab baru dan akses website lain — kalau bisa, refresh Fibidy |
+| Banner offline muncul terus | Cek apakah ada gangguan dari ISP atau coba pindah jaringan |
+| Data tidak tersimpan setelah koneksi pulih | Coba submit ulang — data di form masih ada |
+| Kasir tidak bisa proses bayar | Tunggu koneksi pulih — transaksi tidak bisa diproses offline |

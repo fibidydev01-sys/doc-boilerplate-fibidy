@@ -1,0 +1,62 @@
+---
+title: Pembayaran QRIS
+description: Cara kerja pembayaran QRIS untuk upgrade paket langganan.
+---
+
+# Pembayaran QRIS
+
+## Cara Kerja
+
+Fibidy menggunakan **QRIS sekali bayar per periode** — bukan langganan otomatis. Tidak ada kartu yang disimpan di sistem, tidak ada tagihan yang tiba-tiba muncul. Kamu yang memilih kapan bayar.
+
+**Alur pembayaran:**
+1. Buka `/dashboard/subscription`
+2. Klik "Upgrade" pada paket yang diinginkan
+3. QR code QRIS muncul di layar
+4. Scan dengan aplikasi bank atau dompet digital apapun yang mendukung QRIS
+5. Paket aktif otomatis setelah pembayaran terverifikasi
+
+## Berapa Lama QR Berlaku?
+
+**QR code berlaku 60 menit** sejak dibuat.
+
+Kalau QR expired sebelum kamu sempat scan:
+1. Tutup dialog pembayaran
+2. Klik "Upgrade" lagi — QR baru akan dibuat
+3. Bayar dalam 60 menit
+
+> <IconWarning /> **Jangan scan QR yang sudah expired.** Meski berhasil di-scan, pembayaran tidak akan diproses dan paket tidak aktif.
+
+## Berapa Lama Verifikasi?
+
+Pembayaran biasanya terverifikasi **dalam hitungan detik** setelah transfer berhasil. Kalau lebih dari 2–3 menit:
+
+1. Refresh halaman
+2. Cek status di `/dashboard/subscription`
+3. Kalau tetap tidak aktif setelah 5 menit, hubungi support
+
+## Klik "Bayar" Dua Kali?
+
+Tidak masalah. Sistem mendeteksi pembayaran duplikat — **hanya satu tagihan yang aktif** pada satu waktu. Kamu tidak akan ditagih dua kali untuk periode yang sama.
+
+## Tidak Ada Refund
+
+Pembayaran langganan Fibidy bersifat final sesuai Syarat Layanan. Kalau ada masalah teknis dari sisi Fibidy (misalnya paket tidak aktif meski pembayaran berhasil), hubungi support — kami akan bantu selesaikan.
+
+## Metode Pembayaran yang Bisa Dipakai
+
+Semua aplikasi yang mendukung QRIS bisa digunakan, antara lain:
+
+- GoPay, OVO, Dana, ShopeePay
+- Mobile banking BCA, BRI, BNI, Mandiri, dll.
+- Livin' by Mandiri, BRImo, myBCA, dll.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| QR tidak muncul | Refresh halaman atau ganti browser |
+| QR expired | Klik "Upgrade" lagi untuk buat QR baru |
+| Sudah bayar tapi paket belum aktif | Tunggu 2–3 menit, refresh. Masih belum? Hubungi support |
+| Salah scan / transfer ke nomor lain | Hubungi support dengan bukti transfer |
+| Mau bayar tapi muncul pesan "sudah ada tagihan aktif" | Tagihan sebelumnya belum expired — tunggu atau hubungi support |

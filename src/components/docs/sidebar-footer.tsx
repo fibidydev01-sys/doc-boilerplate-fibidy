@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes'
 import { ArrowUpRight, Sun, Moon } from 'lucide-react'
 
 // ============================================================
-// SIDEBAR FOOTER
+// SIDEBAR FOOTER — Fibidy Docs
 // Contact link (left) + theme toggle (right)
 // Pinned at bottom of sidebar via sidebar.footer prop
 // ============================================================
@@ -32,7 +32,7 @@ export function SidebarFooter() {
         rel="noopener noreferrer"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-fd-muted-foreground transition-colors hover:text-fd-foreground"
       >
-        Contact
+        Kontak
         <ArrowUpRight className="h-3.5 w-3.5 opacity-60" aria-hidden />
       </a>
 

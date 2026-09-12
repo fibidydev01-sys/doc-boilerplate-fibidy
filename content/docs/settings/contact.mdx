@@ -1,0 +1,51 @@
+---
+title: Kontak
+description: Atur WhatsApp, telepon, alamat, Google Maps embed.
+---
+
+# Kontak
+
+## Mengapa Kontak Itu Penting?
+
+> **Pelanggan yang sudah tertarik dengan produkmu perlu tahu cara menghubungimu.** Kalau kontak tidak jelas, mereka bisa pergi ke toko lain. Kontak tampil di dua tempat strategis: section kontak di halaman depan, dan footer di setiap halaman.
+
+## Yang Bisa Diatur
+
+| Elemen | Format | Keterangan |
+|---|---|---|
+| **WhatsApp** | `62xxxxxxxxx` | Kontak utama pelanggan — wajib |
+| **Telepon** | Bebas | Kontak alternatif — opsional |
+| **Alamat** | Bebas | Lokasi fisik toko — opsional |
+| **Google Maps** | URL embed | Peta interaktif di halaman kontak — opsional |
+| **Toggle Tampilkan Peta** | ON/OFF | Kontrol visibilitas peta |
+
+## WhatsApp
+
+> <IconWarning /> **Format harus `62xxxxxxxxx` tanpa awalan 0.** Contoh: nomor `081234567890` ditulis sebagai `6281234567890`. Format internasional ini memastikan link WhatsApp terbuka dengan benar dari mana saja.
+
+## Google Maps Embed
+
+Cara mendapatkan URL embed:
+
+1. Buka Google Maps
+2. Cari lokasi toko
+3. Klik **Share** → **Embed a map**
+4. Salin URL dari atribut `src="..."`
+5. Tempel di Pengaturan → Kontak → Google Maps
+
+> <IconTip /> **Toggle "Tampilkan Peta" berguna untuk toko yang tidak punya lokasi fisik.** Matikan jika toko hanya melayani online.
+
+## Proses Pengaturan
+
+1. Buka `/dashboard/settings?section=contact`
+2. Isi data kontak
+3. Klik "Simpan"
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| WhatsApp tidak muncul di toko | Cek format nomor — harus `62xxxxxxxxx` |
+| Link WhatsApp tidak terbuka | Pastikan tidak ada awalan `0` atau `+` |
+| Peta tidak tampil | Cek toggle "Tampilkan Peta" dan validitas URL embed |
+| Nomor telepon tidak tampil | Pastikan sudah diisi dan disimpan |

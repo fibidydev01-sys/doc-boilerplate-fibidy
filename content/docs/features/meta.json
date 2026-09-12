@@ -1,0 +1,12 @@
+{
+  "title": "Fitur",
+  "pages": [
+    "overview",
+    "store-setup",
+    "products",
+    "cashier",
+    "board",
+    "stock",
+    "reports"
+  ]
+}

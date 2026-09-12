@@ -1,18 +1,18 @@
 import type { ReactNode } from 'react'
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans, JetBrains_Mono, Playfair_Display } from 'next/font/google'
+import { Inter, JetBrains_Mono } from 'next/font/google'
 import { RootProvider } from 'fumadocs-ui/provider/next'
 import './globals.css'
 
 // ============================================================
-// FONTS — next/font is self-hosted + CLS-proof.
-// Don't @import Google Fonts in globals.css (that's a duplicate fetch).
+// FONTS — Inter + JetBrains Mono only (Expo Design System)
+// Weight: 400/500/600 sesuai type scale
 // ============================================================
 
-const fontSans = Plus_Jakarta_Sans({
+const fontSans = Inter({
   subsets: ['latin'],
   variable: '--font-sans',
-  weight: ['300', '400', '500', '600', '700', '800'],
+  weight: ['400', '500', '600'],
 })
 
 const fontMono = JetBrains_Mono({
@@ -21,38 +21,21 @@ const fontMono = JetBrains_Mono({
   weight: ['400', '500', '700'],
 })
 
-const fontSerif = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-serif',
-  weight: ['400', '500', '600', '700', '800', '900'],
-})
-
-// ============================================================
-// METADATA
-// ============================================================
-
 export const metadata: Metadata = {
   title: {
-    default: 'Boilerplate Docs',
-    template: '%s · Boilerplate Docs',
+    default: 'Fibidy Docs',
+    template: '%s · Fibidy Docs',
   },
   description:
-    'Full-stack Next.js 16 + Supabase boilerplate — config-driven, module-based, production-ready.',
+    'Dokumentasi resmi Fibidy — platform all-in-one untuk UMKM Indonesia. Toko online, kasir, manajemen stok, dan laporan penjualan.',
   icons: { icon: '/favicon.ico' },
 }
-
-// ============================================================
-// ROOT LAYOUT
-// RootProvider (from fumadocs-ui/provider/next) handles theme
-// (next-themes internally) + search context. No need to wrap
-// another ThemeProvider.
-// ============================================================
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
-      lang="en"
-      className={`${fontSans.variable} ${fontMono.variable} ${fontSerif.variable}`}
+      lang="id"
+      className={`${fontSans.variable} ${fontMono.variable}`}
       suppressHydrationWarning
     >
       <body className="flex flex-col min-h-screen">

@@ -1,0 +1,63 @@
+---
+title: Papan Kerja (Jasa)
+description: Kanban 4 kolom untuk lacak pengerjaan pesanan jasa.
+---
+
+# Papan Kerja (Jasa)
+
+**Tampil hanya untuk toko mode dagang Jasa atau Hybrid**
+
+## Mengapa Fitur Ini Ada?
+
+> **Bayangkan kamu punya 10 pesanan laundry atau service AC yang harus dikerjakan hari ini.** Satu pelanggan telepon nanya "cucian saya sudah selesai?", pelanggan lain datang ambil, dan ada 3 orang antri di depan. Bagaimana kamu tahu mana yang sudah dikerjakan, mana yang belum, mana yang selesai tapi belum diambil?
+
+> **Papan Kerja adalah jawabannya.** Sistem Kanban 4 kolom yang membuat alur pengerjaan pesanan jasa terlihat jelas — dari pesanan masuk sampai siap diserahkan. Tinggal geser kartu ke kolom berikutnya setiap ada kemajuan.
+
+## 4 Kolom Kanban
+
+| Kolom | Makna | Kapan Pesanan Ada di Sini? |
+|---|---|---|
+| **Antri** | Pesanan masuk, belum dikerjakan | Saat pelanggan memesan dan belum dikerjakan |
+| **Proses** | Sedang dikerjakan | Saat kamu mulai mengerjakan pesanan |
+| **Selesai** | Pekerjaan selesai | Setelah pengerjaan selesai, menunggu diambil |
+| **Siap Ambil** | Siap diserahkan ke pelanggan | Setelah pesanan lunas dan siap diambil |
+
+## Informasi di Tiap Kartu
+
+| Informasi | Kegunaan |
+|---|---|
+| Nama layanan | Identitas pesanan |
+| Qty | Jumlah item yang dipesan |
+| Nomor order | Referensi ke transaksi di Kasir |
+| Estimasi selesai | Kapan pesanan diperkirakan selesai |
+| Status pembayaran | BELUM BAYAR / COMPLETED |
+
+> <IconWarning /> **Tombol "Serahkan" hanya muncul jika status pembayaran COMPLETED.** Ini memastikan kamu tidak menyerahkan barang/jasa sebelum pelanggan membayar.
+
+## Cara Menggeser Kartu
+
+1. Klik tombol **→** untuk maju ke kolom berikutnya
+2. Klik tombol **←** untuk mundur ke kolom sebelumnya
+3. Di kolom **Siap Ambil**, klik **"Serahkan"** untuk menyelesaikan pesanan
+
+> <IconTip /> **Kenapa tombol, bukan drag-and-drop?** Papan Kerja sering dipakai di ponsel — tombol lebih mudah ditekan dan mengurangi kesalahan di layar kecil.
+
+## Tampilan Desktop vs Mobile
+
+| Perangkat | Tampilan |
+|---|---|
+| **Desktop** | 4 kolom berdampingan — semua status terlihat sekaligus |
+| **Mobile** | Tab per kolom — satu kolom ditampilkan, fokus pada satu status |
+
+## Kapan Papan Kerja Tidak Muncul?
+
+Papan Kerja hanya tampil jika mode dagang = **Jasa** atau **Hybrid**. Toko mode **Barang** saja tidak menampilkan Papan Kerja.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Papan Kerja tidak ada di menu | Ubah mode dagang ke Jasa atau Hybrid di Pengaturan |
+| Papan Kerja kosong | Belum ada pesanan jasa masuk, atau pesanan yang ada berjenis barang |
+| Tombol Serahkan tidak muncul | Status pembayaran masih BELUM BAYAR — lunasi pembayaran dulu |
+| Kartu tidak bisa digeser | Cek koneksi internet — Offline Banner muncul jika terputus |

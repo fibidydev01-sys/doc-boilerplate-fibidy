@@ -3,9 +3,13 @@ import { Info, AlertTriangle, AlertOctagon, CheckCircle2, Lightbulb, Lock } from
 import { cn } from '@/lib/shared/utils'
 
 // ============================================================
-// CALLOUT — Railway-minimal editorial style
-// Single left border (no bg flood), tight vertical rhythm
-// Usage in MDX: <Callout type="warning">...</Callout>
+// CALLOUT — Expo Design System color mapping
+// info    → #0d74ce (colors.text-link Expo)
+// warning → #ab6400 (colors.accent-warning Expo)
+// danger  → #eb8e90 (colors.semantic-error Expo)
+// success → #16a34a (colors.semantic-success Expo)
+// tip     → #8145b5 (colors.accent-preview Expo)
+// secure  → foreground (tidak ada token security di Expo)
 // ============================================================
 
 type CalloutType = 'info' | 'warning' | 'danger' | 'success' | 'tip' | 'secure'
@@ -17,12 +21,12 @@ interface CalloutProps {
 }
 
 const VARIANT = {
-  info:    { Icon: Info,          border: 'border-l-blue-400/70',    icon: 'text-blue-400',    title: 'Info' },
-  warning: { Icon: AlertTriangle, border: 'border-l-amber-400/70',   icon: 'text-amber-400',   title: 'Warning' },
-  danger:  { Icon: AlertOctagon,  border: 'border-l-red-400/70',     icon: 'text-red-400',     title: 'Danger' },
-  success: { Icon: CheckCircle2,  border: 'border-l-emerald-400/70', icon: 'text-emerald-400', title: 'Success' },
-  tip:     { Icon: Lightbulb,     border: 'border-l-purple-400/70',  icon: 'text-purple-400',  title: 'Tip' },
-  secure:  { Icon: Lock,          border: 'border-l-rose-400/70',    icon: 'text-rose-400',    title: 'Security' },
+  info:    { Icon: Info,          border: 'border-l-[#0d74ce]/70', icon: 'text-[#0d74ce]', title: 'Info' },
+  warning: { Icon: AlertTriangle, border: 'border-l-[#ab6400]/70', icon: 'text-[#ab6400]', title: 'Warning' },
+  danger:  { Icon: AlertOctagon,  border: 'border-l-[#eb8e90]/70', icon: 'text-[#eb8e90]', title: 'Danger' },
+  success: { Icon: CheckCircle2,  border: 'border-l-[#16a34a]/70', icon: 'text-[#16a34a]', title: 'Success' },
+  tip:     { Icon: Lightbulb,     border: 'border-l-[#8145b5]/70', icon: 'text-[#8145b5]', title: 'Tip' },
+  secure:  { Icon: Lock,          border: 'border-l-foreground/70', icon: 'text-foreground', title: 'Security' },
 } as const
 
 export function Callout({ type = 'info', title, children }: CalloutProps) {

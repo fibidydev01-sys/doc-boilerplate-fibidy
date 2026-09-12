@@ -3,6 +3,6 @@ import { toFumadocsSource } from 'fumadocs-mdx/runtime/server'
 import { loader } from 'fumadocs-core/source'
 
 export const source = loader({
-  baseUrl: '/docs',
+  baseUrl: '/',
   source: toFumadocsSource(docs, meta),
 })

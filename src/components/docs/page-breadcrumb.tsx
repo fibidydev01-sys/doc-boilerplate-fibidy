@@ -24,7 +24,7 @@ export function PageBreadcrumb({ crumbs }: PageBreadcrumbProps) {
       className="mb-4 flex items-center gap-2 text-sm text-fd-muted-foreground"
     >
       <Link
-        href="/docs"
+        href="/"
         className="transition-colors hover:text-fd-foreground"
       >
         Home
@@ -52,8 +52,8 @@ export function PageBreadcrumb({ crumbs }: PageBreadcrumbProps) {
 }
 
 // Build crumbs from slug segments (excluding last — which becomes H1)
-// Input:  ["setup", "project"]
-// Output: [{label: "Setup", href: "/docs/setup"}]
+// Input:  ["features", "cashier"]
+// Output: [{label: "Features", href: "/features"}]
 export function buildCrumbsFromSlug(slug: string[] | undefined): Crumb[] {
   if (!slug || slug.length === 0) return []
 
@@ -61,7 +61,7 @@ export function buildCrumbsFromSlug(slug: string[] | undefined): Crumb[] {
   if (segments.length === 0) return []
 
   const crumbs: Crumb[] = []
-  let accumulated = '/docs'
+  let accumulated = ''
 
   segments.forEach((seg) => {
     accumulated += `/${seg}`

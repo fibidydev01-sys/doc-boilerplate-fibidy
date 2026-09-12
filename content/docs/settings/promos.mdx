@@ -1,0 +1,70 @@
+---
+title: Program Promo
+description: BOGO & Buy2Get1 berjalan otomatis di kasir.
+---
+
+# Program Promo
+
+**Tersedia di paket Starter+**
+
+## Mengapa Program Promo Itu Penting?
+
+> **Promo adalah cara paling efektif mendorong pembelian.** Program Promo Fibidy mengotomatiskan perhitungan ini — kasir tinggal tambahkan produk, sistem menghitung promo secara otomatis.
+
+## Jenis Promo
+
+| Jenis | Aturan | Contoh |
+|---|---|---|
+| **BOGO** (Beli 1 Gratis 1) | Tiap kelipatan 2 item, 1 gratis | Beli 2 → gratis 1; Beli 4 → gratis 2 |
+| **Buy2Get1** (Beli 2 Gratis 1) | Tiap kelipatan 3 item, 1 gratis | Beli 3 → gratis 1; Beli 6 → gratis 2 |
+
+## Cara Membuat Program Promo
+
+1. Buka `/dashboard/settings?section=promo`
+2. Klik **"Tambah promo"**
+3. Pilih produk yang akan dipromokan
+4. Pilih jenis promo (BOGO atau Buy2Get1)
+5. Atur tanggal berlaku (opsional — kosongkan jika promo berjalan terus)
+6. Klik **"Simpan"**
+
+## Cara Kerja di Kasir
+
+Promo berjalan **otomatis** — kasir tidak perlu mengaktifkan apa pun:
+
+1. Kasir menambahkan produk ke keranjang
+2. Sistem mendeteksi promo aktif pada produk tersebut
+3. Saat qty mencapai kelipatan yang disyaratkan, item gratis otomatis ditambahkan
+4. Item gratis muncul di struk sebagai baris terpisah dengan harga **Rp 0**
+
+## Cara Kerja Perhitungan
+
+**Urutan perhitungan:** promo dihitung **dulu**, baru diskon preset diterapkan ke subtotal.
+
+Contoh: kamu punya promo BOGO untuk kopi (Rp 25.000) dan diskon preset "Member 10%":
+
+1. Beli 2 kopi → total Rp 50.000
+2. BOGO aktif → 1 gratis → subtotal jadi Rp 25.000
+3. Diskon 10% dari Rp 25.000 → hemat Rp 2.500
+4. **Grand total: Rp 22.500**
+
+Kalau dibalik (diskon dulu baru promo), hasilnya beda. Fibidy selalu: **promo dulu, diskon belakangan.**
+
+**Server hitung ulang saat bayar** — preview di keranjang adalah perkiraan, final dihitung ulang di server untuk mencegah manipulasi.
+
+## Mengelola Promo
+
+| Aksi | Cara |
+|---|---|
+| Lihat daftar promo | Buka Pengaturan → Program Promo |
+| Nonaktifkan promo | Klik tombol nonaktif di kartu promo |
+| Hapus promo | Cukup nonaktifkan — riwayat transaksi tetap utuh |
+
+> <IconWarning /> **Promo yang dinonaktifkan tidak berjalan lagi di Kasir.** Riwayat transaksi yang sudah pakai promo tersebut tetap tersimpan.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Promo tidak berjalan di Kasir | Cek apakah promo aktif dan dalam periode berlaku |
+| Item gratis tidak muncul | Cek qty — BOGO butuh kelipatan 2, Buy2Get1 butuh kelipatan 3 |
+| Tanggal promo tidak valid | Tanggal akhir harus setelah tanggal awal |

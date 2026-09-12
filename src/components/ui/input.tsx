@@ -2,6 +2,12 @@ import * as React from "react"
 
 import { cn } from "@/lib/shared/utils"
 
+// ============================================================
+// INPUT — rounded-md (8px) sesuai Expo DESIGN.md
+// Search bar di Expo = kotak melengkung, bukan pill
+// Pill hanya untuk button dan badge
+// ============================================================
+
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input

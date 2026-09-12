@@ -1,0 +1,80 @@
+---
+title: Manajemen Stok
+description: Restock & opname jaga stok tetap akurat.
+---
+
+# Manajemen Stok
+
+**Khusus produk barang — tidak berlaku untuk jasa**
+
+## Mengapa Fitur Ini Ada?
+
+> **Stok yang tidak akurat merugikan dua kali.** Kamu bisa kehabisan barang yang sebenarnya masih ada, atau terus menjual barang yang sebenarnya sudah habis.
+
+> **Masalahnya: stok di sistem sering tidak sama dengan stok di rak.** Manajemen Stok Fibidy menyelesaikan ini dengan dua cara: **Restock** (saat barang masuk) dan **Opname** (saat cocokkan stok fisik).
+
+## Restock Barang Masuk
+
+Pakai Restock setiap kali ada barang baru masuk ke toko.
+
+1. Pilih produk yang akan di-restock
+2. Isi jumlah barang yang masuk
+3. Klik Simpan — stok sistem bertambah, tercatat di log sebagai `IN`
+
+> <IconTip /> **Kenapa isi jumlah masuk, bukan stok akhir?** Restock mencatat aktivitas, bukan kondisi. Dengan mencatat "10 masuk" (bukan "stok jadi 25"), kamu punya jejak audit yang jelas.
+
+## Opname Cocokkan Stok
+
+Pakai Opname saat mengecek stok fisik di rak dan ingin menyamakan dengan sistem.
+
+1. Pilih produk yang akan di-opname
+2. Isi angka hasil hitung fisik
+3. Sistem hitung selisih otomatis
+4. Jika selisih signifikan → konfirmasi tambahan
+5. Tersimpan di log sebagai `OPNAME`
+
+> <IconWarning /> **Konfirmasi tambahan muncul jika selisih ≥ 10 unit DAN > 50% dari stok sistem.** Ini mencegah kesalahan ketik (misal: 230 bukan 23) langsung mengubah stok secara fatal.
+
+## Filter & Sortir
+
+| Filter | Fungsi |
+|---|---|
+| **Semua** | Tampilkan semua produk |
+| **Menipis** | Stok ≤ Min Stock |
+| **Habis** | Stok = 0 |
+
+| Urutan | Fungsi |
+|---|---|
+| **Paling Kritis** | Prioritas stok paling menipis |
+| **Nama A–Z** | Urut berdasarkan nama |
+| **Nilai Tertinggi** | Urut berdasarkan nilai stok |
+
+> <IconTip /> **Gunakan filter "Menipis" + urutan "Paling Kritis" setiap pagi** untuk tahu produk mana yang harus segera di-restock.
+
+## Notifikasi Stok Kritis
+
+Setelah transaksi selesai, sistem otomatis mengecek stok produk yang baru terjual. Kalau ada yang habis atau menipis:
+
+- **Toast notifikasi** muncul di Kasir
+- Informasi berisi: nama produk, sisa stok, dan batas minimum
+- Klik notifikasi langsung ke halaman Manajemen Stok
+
+Ini memastikan kamu tahu kapan harus restock — tanpa perlu cek manual setiap saat.
+
+## Kapan Pakai Restock vs Opname?
+
+| Skenario | Gunakan |
+|---|---|
+| Baru terima kiriman dari supplier | Restock |
+| Ada barang rusak/expired yang dibuang | Opname |
+| Stok tidak sesuai setelah transaksi ramai | Opname |
+| Input stok awal produk baru | Restock |
+| Audit stok bulanan | Opname |
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Stok tidak berkurang setelah transaksi | Stok berkurang otomatis saat transaksi COMPLETED — cek Log Stok |
+| Produk stok 0 tetap muncul di Kasir | Ini disengaja — stok sistem kadang tertinggal dari kondisi rak fisik |
+| Filter "Menipis" tidak menampilkan produk | Cek nilai Min Stock — mungkin terlalu rendah atau belum diisi |

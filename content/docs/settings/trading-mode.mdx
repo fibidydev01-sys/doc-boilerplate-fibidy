@@ -1,0 +1,73 @@
+---
+title: Mode Dagang & Struk
+description: Tentukan toko jual Barang, Jasa, atau Hybrid — dan atur tampilan struk.
+---
+
+# Mode Dagang & Struk
+
+## Mengapa Mode Dagang Itu Penting?
+
+> **Mode Dagang menentukan menu apa yang muncul di dashboard-mu.** Toko yang jual barang tidak butuh Papan Kerja. Toko yang jual jasa tidak butuh Manajemen Stok. Hybrid dapat keduanya. Pilih yang sesuai dan tampilan Fibidy akan menyesuaikan diri.
+
+## 3 Pilihan Mode Dagang
+
+| Mode | Menu yang Muncul | Cocok Untuk |
+|---|---|---|
+| **Barang** | Kasir, Manajemen Stok, Laporan | Toko retail, fashion, kuliner take-away, sembako |
+| **Jasa** | Kasir (dengan "Bayar Nanti"), Papan Kerja, Laporan | Laundry, salon, bengkel, fotografi, jasa profesional |
+| **Hybrid** | Semua — Kasir, Papan Kerja, Stok, Laporan | Cafe yang juga terima catering, laundry + jual deterjen |
+
+### Detail per Mode
+
+**Barang:**
+- Produk hanya bisa bertipe "Barang" (ada stok fisik)
+- Kasir mencatat transaksi dan langsung kurangi stok
+- Papan Kerja tidak muncul
+
+**Jasa:**
+- Produk hanya bisa bertipe "Jasa" (ada durasi)
+- Kasir punya tombol "Bayar Nanti" untuk pesanan yang dibayar setelah selesai
+- Papan Kerja muncul untuk lacak status pengerjaan
+
+**Hybrid:**
+- Produk bisa bertipe "Barang" maupun "Jasa"
+- Di Kasir ada toggle untuk ganti antara katalog Barang dan Layanan
+- Papan Kerja muncul untuk item jasa
+- Stok hanya berlaku untuk item barang
+
+## Cara Mengubah Mode Dagang
+
+1. Buka `/dashboard/settings?section=kasir`
+2. Pilih mode dagang (Barang / Jasa / Hybrid)
+3. Klik **"Simpan"**
+
+Perubahan langsung berlaku — menu di sidebar dashboard akan menyesuaikan.
+
+> <IconWarning /> **Mengubah mode dagang tidak menghapus data.** Produk yang sudah dibuat tetap ada. Tapi produk yang tidak sesuai mode baru tidak akan muncul di Kasir.
+
+## Konfigurasi Struk
+
+Struk dikirim ke pelanggan setelah setiap transaksi. Isi dengan identitas usahamu agar struk terlihat profesional.
+
+| Field | Keterangan |
+|---|---|
+| **Nama Usaha** | Muncul di bagian atas struk |
+| **Alamat** | Lokasi toko — opsional |
+| **No. Telepon** | Kontak yang tertera di struk — opsional |
+| **Footer Struk** | Pesan penutup, misal: "Terima kasih sudah berbelanja!" |
+| **Lebar Kertas** | 58mm (32 karakter per baris) atau 80mm (48 karakter per baris) |
+
+**Pilih lebar kertas sesuai printer thermal-mu:**
+- **58mm** — printer thermal mini, umum di UMKM
+- **80mm** — printer thermal standar kasir yang lebih besar
+
+> <IconTip /> **Tidak punya printer?** Struk tetap bisa dikirim via WhatsApp sebagai teks atau gambar — ukuran kertas tidak berpengaruh ke struk digital.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Papan Kerja tidak muncul | Ubah mode dagang ke Jasa atau Hybrid |
+| Manajemen Stok hilang dari menu | Mode dagang mungkin di-set ke Jasa — ubah ke Barang atau Hybrid |
+| Produk tidak muncul di Kasir | Cek jenis produk sesuai mode dagang yang aktif |
+| Struk tidak ada nama usaha | Isi field Nama Usaha di Konfigurasi Struk |

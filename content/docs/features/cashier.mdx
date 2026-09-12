@@ -1,0 +1,132 @@
+---
+title: Kasir (Point of Sale)
+description: Catat transaksi offline — keranjang, diskon, bayar, struk digital.
+---
+
+# Kasir (Point of Sale)
+
+**Tersedia di paket Starter+**
+
+## Mengapa Fitur Ini Ada?
+
+> **Kasir adalah jembatan antara toko online dan operasional harianmu.** Kamu sudah punya toko online di `namamu.fibidy.com`, dan pelanggan sudah menghubungi via WhatsApp. Tapi bagaimana mencatat semua transaksi yang terjadi — baik di toko fisik maupun via chat?
+
+> **Kasir mengubah transaksi yang sebelumnya hanya "catatan di buku" menjadi data digital yang rapi, otomatis masuk laporan, dan bisa dilihat kapan saja.**
+
+## Apa yang Bisa Kamu Lakukan?
+
+- <IconCheck /> Menambahkan produk/jasa ke keranjang dengan cepat
+- <IconCheck /> Memberikan diskon dari preset yang sudah dibuat
+- <IconCheck /> Menerima pembayaran (tunai, transfer, debit) dengan hitungan kembalian otomatis
+- <IconCheck /> Mencetak struk digital yang bisa dibagikan via WhatsApp
+- <IconCheck /> Mencatat pesanan jasa yang dibayar nanti ("Bayar Nanti")
+
+## Alur Transaksi
+
+### 1. Pilih Produk
+
+Buka `/dashboard/kasir`. Semua produk berstatus **Aktif** akan muncul.
+
+- Cari produk lewat kolom pencarian
+- Filter berdasarkan kategori
+- Pilih tampilan **Grid** (foto besar) atau **Daftar** (lebih cepat dipindai)
+- Klik produk → otomatis masuk keranjang
+
+> <IconTip /> **Produk tidak muncul?** Produk yang dinonaktifkan tidak tampil di Kasir. Aktifkan kembali di Manajemen Produk.
+
+### 2. Atur Keranjang
+
+Di keranjang, kamu bisa:
+
+- Tambah/kurangi jumlah item dengan tombol `+` dan `-`
+- Terapkan diskon — pilih dari Diskon Preset yang sudah dibuat
+- Lihat total otomatis: subtotal, potongan diskon, dan grand total
+
+> <IconWarning /> **Kasir tidak mengizinkan input diskon manual.** Semua diskon harus dibuat sebagai Preset di Pengaturan — ini menjaga konsistensi dan mencegah kesalahan input.
+
+### 3. Pilih Metode Pembayaran
+
+| Metode | Yang Perlu Dilakukan |
+|---|---|
+| **Tunai** | Isi nominal uang yang diterima → kembalian dihitung otomatis |
+| **Transfer** | Pilih metode — tidak perlu input angka |
+| **Debit** | Pilih metode — tidak perlu input angka |
+
+### 4. Bayar & Struk
+
+Klik **"Bayar"** → struk digital muncul otomatis. Struk bisa:
+
+- Dikirim via WhatsApp
+- Disalin sebagai teks
+- Dibagikan sebagai gambar
+
+## Memilih Diskon di Keranjang
+
+Klik tombol **"Diskon"** di keranjang → halaman picker terbuka.
+
+- Setiap preset menampilkan **pratinjau hemat** ("Hemat Rp 15.000") sebelum dipilih
+- Pilih satu preset, atau pilih "Tanpa Diskon" untuk hapus diskon
+- Promo aktif dihitung **sebelum** diskon preset — promo dulu, baru diskon
+
+## Perilaku Keranjang
+
+Keranjang disimpan sementara di sesi browser (sessionStorage):
+
+| Kondisi | Yang Terjadi |
+|---|---|
+| Refresh halaman | Keranjang tetap ada |
+| Tutup tab/browser | Keranjang hilang |
+| Buka tab baru | Keranjang tidak ikut — setiap tab punya keranjang sendiri |
+| Selesai transaksi | Keranjang otomatis dikosongkan |
+
+> <IconWarning /> **Isi keranjang tidak tersinkron antar tab.** Kalau kamu kasir di dua perangkat sekaligus, masing-masing punya keranjangnya sendiri.
+
+## Fitur "Bayar Nanti" (Khusus Jasa)
+
+Untuk bisnis jasa yang menerima pembayaran setelah selesai (laundry, service, dsb):
+
+1. Kasir mencatat pesanan → status **BELUM BAYAR**
+2. Pesanan masuk ke Papan Kerja untuk diproses
+3. Setelah selesai, pelanggan bayar → status **COMPLETED**
+4. Kartu di Papan Kerja bisa diserahkan
+
+> <IconTip /> **Fitur ini hanya muncul jika ada item jasa di keranjang.**
+
+## Void vs Refund
+
+Dua cara membatalkan transaksi — **pilih yang tepat** karena dampaknya ke stok berbeda.
+
+| | Void | Refund |
+|---|---|---|
+| **Kapan** | Salah input, transaksi belum diserahkan | Pelanggan kembalikan barang |
+| **Stok** | **Tidak** dikembalikan | **Dikembalikan** ke sistem |
+| **Alasan** | Opsional | Wajib diisi |
+| **Dampak omzet** | Keluar dari rekap | Keluar dari rekap |
+
+**Decision tree sederhana:**
+- Barang sudah keluar ke pelanggan dan kembali? → **Refund**
+- Salah input sebelum barang diserahkan? → **Void**
+
+> <IconWarning /> **Salah pilih bisa bikin stok kacau.** Void tidak restore stok — kalau barang fisik kembali tapi kamu void bukan refund, stok di sistem tidak bertambah.
+
+## Riwayat Transaksi
+
+Buka **Riwayat** di Kasir untuk melihat semua transaksi.
+
+**Filter yang tersedia:**
+- Status: Semua / BELUM BAYAR / COMPLETED / VOID / REFUND
+- Rentang tanggal
+- Cari by nomor order
+
+**Tampilan:** bisa toggle antara kartu (grid) atau tabel (daftar). Pagination 20 per halaman.
+
+**Aksi per baris:** Lihat detail struk, salin nomor order, Void, atau Refund.
+
+## Troubleshooting
+
+| Masalah | Solusi |
+|---|---|
+| Produk tidak muncul di Kasir | Aktifkan produk di Manajemen Produk |
+| Struk tidak muncul setelah bayar | Cek Riwayat Transaksi — transaksi tetap tercatat |
+| Tombol Bayar tidak aktif | Untuk tunai: pastikan nominal uang diterima sudah diisi |
+| Koneksi terputus saat transaksi | Tunggu koneksi pulih — data tetap aman |
